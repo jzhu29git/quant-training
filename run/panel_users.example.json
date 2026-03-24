@@ -1,0 +1,17 @@
+[
+  {
+    "username": "admin",
+    "password": "change-me-admin-password",
+    "locale": "en",
+    "display_name": "Quant Admin",
+    "role": "admin"
+  },
+  {
+    "username": "viewer",
+    "password": "change-me-viewer-password",
+    "locale": "zh-Hant",
+    "display_name": "Viewer",
+    "role": "viewer"
+  }
+]
+

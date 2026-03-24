@@ -1,0 +1,51 @@
+name: aistockcn
+
+services:
+  data-prep:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aistockcn-data-prep:latest
+    working_dir: /app
+    volumes:
+      - ./:/app
+    environment:
+      TZ: UTC
+    command: []
+
+  panel-api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: aistockcn-panel-api:latest
+    restart: unless-stopped
+    working_dir: /app
+    env_file:
+      - ./run/panel.env
+    volumes:
+      - ./:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      PROJECT_ROOT: /workspace
+      HOST_PROJECT_ROOT: ${HOST_PROJECT_ROOT:-/opt/aistockcn}
+      PANEL_API_ALLOWED_CIDRS: ${PANEL_API_ALLOWED_CIDRS:-127.0.0.1/32,::1/128,172.28.0.0/16}
+    ports:
+      - "127.0.0.1:8001:8000"
+
+  panel-web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: aistockcn-panel-web:latest
+    restart: unless-stopped
+    working_dir: /app
+    depends_on:
+      - panel-api
+    env_file:
+      - ./run/panel.env
+    environment:
+      API_BASE_URL: http://panel-api:8000
+    volumes:
+      - ./run:/run-config:ro
+    ports:
+      - "127.0.0.1:3030:3000"

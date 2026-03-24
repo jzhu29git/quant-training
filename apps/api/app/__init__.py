@@ -1,0 +1,1 @@
+"""Aistock control panel API."""

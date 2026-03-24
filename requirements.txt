@@ -1,0 +1,7 @@
+akshare
+baostock
+fastparquet
+lightgbm
+pandas
+pyarrow
+scikit-learn

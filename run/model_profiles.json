@@ -1,0 +1,44 @@
+{
+  "default_profile": "short_5d",
+  "profiles": [
+    {
+      "name": "short_5d",
+      "label": "5D Short",
+      "label_horizon": 5,
+      "label_threshold": 0.02,
+      "valid_days": 60,
+      "score_threshold": 0.5,
+      "score_top_k": 20,
+      "backtest_min_train_days": 252,
+      "backtest_retrain_every": 20,
+      "backtest_rebalance_every": 5,
+      "backtest_top_k": 5
+    },
+    {
+      "name": "short_3d",
+      "label": "3D Short",
+      "label_horizon": 3,
+      "label_threshold": 0.015,
+      "valid_days": 60,
+      "score_threshold": 0.5,
+      "score_top_k": 20,
+      "backtest_min_train_days": 252,
+      "backtest_retrain_every": 15,
+      "backtest_rebalance_every": 3,
+      "backtest_top_k": 5
+    },
+    {
+      "name": "short_1d",
+      "label": "1D Short",
+      "label_horizon": 1,
+      "label_threshold": 0.01,
+      "valid_days": 60,
+      "score_threshold": 0.5,
+      "score_top_k": 20,
+      "backtest_min_train_days": 252,
+      "backtest_retrain_every": 10,
+      "backtest_rebalance_every": 1,
+      "backtest_top_k": 5
+    }
+  ]
+}

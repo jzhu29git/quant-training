@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+START_DATE="${START_DATE:-20230322}"
+END_DATE="${END_DATE:-20260322}"
+SLEEP_SECONDS="${SLEEP_SECONDS:-1.2}"
+PAUSE_MINUTES="${PAUSE_MINUTES:-15}"
+MAX_PASSES="${MAX_PASSES:-5}"
+MAX_ATTEMPTS="${MAX_ATTEMPTS:-6}"
+RELOGIN_EVERY="${RELOGIN_EVERY:-300}"
+OVERWRITE="${OVERWRITE:-0}"
+
+export START_DATE
+export END_DATE
+export SLEEP_SECONDS
+export PAUSE_MINUTES
+export MAX_PASSES
+export MAX_ATTEMPTS
+export RELOGIN_EVERY
+export OVERWRITE
+
+cd "$ROOT_DIR"
+bash run_full_market_3y_batch.sh
