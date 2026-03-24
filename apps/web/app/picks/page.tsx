@@ -30,33 +30,18 @@ export default async function PicksPage() {
       <Panel title={copy.picks.rankedSignals}>
         <DataTable
           rows={picks.picks}
-          columns={
-            user.locale === "zh-Hant"
-              ? [
-                  { key: "rank", label: "排名" },
-                  { key: "date", label: "預測時間" },
-                  { key: "code", label: "代碼" },
-                  { key: "name", label: "名稱" },
-                  { key: "industry", label: "產業" },
-                  { key: "score", label: "模型分數" },
-                  { key: "close", label: "當時股價" },
-                  { key: "bias_20", label: "20 日乖離" },
-                  { key: "pe_ttm", label: "PE TTM" },
-                  { key: "pb", label: "PB" }
-                ]
-              : [
-                  { key: "rank", label: "Rank" },
-                  { key: "date", label: "Prediction Time" },
-                  { key: "code", label: "Code" },
-                  { key: "name", label: "Name" },
-                  { key: "industry", label: "Industry" },
-                  { key: "score", label: "Model Score" },
-                  { key: "close", label: "Price At Signal" },
-                  { key: "bias_20", label: "20D Bias" },
-                  { key: "pe_ttm", label: "PE TTM" },
-                  { key: "pb", label: "PB" }
-                ]
-          }
+          columns={[
+            { key: "rank", label: "Rank" },
+            { key: "date", label: "Prediction Time" },
+            { key: "code", label: "Code" },
+            { key: "name", label: "Name" },
+            { key: "industry", label: "Industry" },
+            { key: "score", label: "Model Score" },
+            { key: "close", label: "Price At Signal" },
+            { key: "bias_20", label: "20D Bias" },
+            { key: "pe_ttm", label: "PE TTM" },
+            { key: "pb", label: "PB" }
+          ]}
           emptyLabel={copy.common.noRows}
           locale={user.locale}
         />

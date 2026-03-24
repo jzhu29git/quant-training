@@ -21,7 +21,6 @@ export default async function ModelsPage() {
   const profiles = Array.isArray(overview.model_profiles)
     ? overview.model_profiles as Array<Record<string, unknown>>
     : [];
-  const isZh = user.locale === "zh-Hant";
 
   return (
     <Shell
@@ -41,8 +40,8 @@ export default async function ModelsPage() {
       <section className="two-col-grid">
         <Panel title={copy.models.trainingSnapshot}>
           <div className="status-meta">
-            <span>{isZh ? "目前模型" : "Current model"}: {String(training.profile_name ?? "short_5d")}</span>
-            <span>{isZh ? "標籤天數" : "Label horizon"}: {formatNumber(training.label_horizon as number | undefined, user.locale)}</span>
+            <span>Current model: {String(training.profile_name ?? "short_5d")}</span>
+            <span>Label horizon: {formatNumber(training.label_horizon as number | undefined, user.locale)}</span>
             <span>{copy.models.features}: {Array.isArray(training.feature_cols) ? formatNumber(training.feature_cols.length, user.locale) : "—"}</span>
             <span>{copy.models.categoricals}: {Array.isArray(training.categorical_cols) ? training.categorical_cols.join(", ") : "—"}</span>
             <span>{copy.models.threshold}: {formatMetric(training.threshold, user.locale)}</span>
@@ -60,35 +59,35 @@ export default async function ModelsPage() {
         </Panel>
       </section>
 
-      <Panel title={isZh ? "模型 Profiles" : "Model Profiles"}>
+      <Panel title="Model Profiles">
         <DataTable
           rows={profiles}
           columns={[
-            { key: "name", label: isZh ? "名稱" : "Name" },
-            { key: "label", label: isZh ? "顯示名稱" : "Label" },
-            { key: "label_horizon", label: isZh ? "標籤天數" : "Label Horizon" },
-            { key: "label_threshold", label: isZh ? "標籤門檻" : "Label Threshold" },
-            { key: "backtest_rebalance_every", label: isZh ? "回測調倉頻率" : "Rebalance Every" },
-            { key: "backtest_top_k", label: isZh ? "回測持倉數" : "Backtest Top K" }
+            { key: "name", label: "Name" },
+            { key: "label", label: "Label" },
+            { key: "label_horizon", label: "Label Horizon" },
+            { key: "label_threshold", label: "Label Threshold" },
+            { key: "backtest_rebalance_every", label: "Rebalance Every" },
+            { key: "backtest_top_k", label: "Backtest Top K" }
           ]}
           emptyLabel={copy.common.noRows}
           locale={user.locale}
         />
       </Panel>
 
-      <Panel title={isZh ? "Backtest 比較" : "Backtest Comparison"}>
+      <Panel title="Backtest Comparison">
         <DataTable
           rows={backtestRuns}
           columns={[
-            { key: "run_id", label: isZh ? "Run" : "Run" },
-            { key: "profile_label", label: isZh ? "模型" : "Model" },
-            { key: "generated_at", label: isZh ? "產生時間" : "Generated" },
-            { key: "portfolio_total_return", label: isZh ? "總報酬" : "Total Return" },
-            { key: "portfolio_cagr", label: isZh ? "CAGR" : "CAGR" },
-            { key: "portfolio_max_drawdown", label: isZh ? "最大回撤" : "Max Drawdown" },
-            { key: "portfolio_win_rate", label: isZh ? "勝率" : "Win Rate" },
-            { key: "num_rebalances", label: isZh ? "調倉次數" : "Rebalances" },
-            { key: "backtest_end", label: isZh ? "回測結束" : "Backtest End" }
+            { key: "run_id", label: "Run" },
+            { key: "profile_label", label: "Model" },
+            { key: "generated_at", label: "Generated" },
+            { key: "portfolio_total_return", label: "Total Return" },
+            { key: "portfolio_cagr", label: "CAGR" },
+            { key: "portfolio_max_drawdown", label: "Max Drawdown" },
+            { key: "portfolio_win_rate", label: "Win Rate" },
+            { key: "num_rebalances", label: "Rebalances" },
+            { key: "backtest_end", label: "Backtest End" }
           ]}
           emptyLabel={copy.common.noRows}
           locale={user.locale}

@@ -52,29 +52,29 @@ function renderControlButtons({
   );
 }
 
-function flashMessage(isZh: boolean, params: { notice?: string; error?: string; target?: string }) {
+function flashMessage(_isZh: boolean, params: { notice?: string; error?: string; target?: string }) {
   const code = params.notice ?? params.error;
   if (!code) {
     return null;
   }
 
-  const targetLabel = isZh ? "自動模擬交易" : "Auto Paper Trading";
+  const targetLabel = "Auto Paper Trading";
   const success = {
-    started: isZh ? `${targetLabel} 已送出啟動要求。` : `Start request sent for ${targetLabel}.`,
-    stopped: isZh ? `${targetLabel} 已送出停止要求。` : `Stop request sent for ${targetLabel}.`
+    started: `Start request sent for ${targetLabel}.`,
+    stopped: `Stop request sent for ${targetLabel}.`
   } as const;
   const errors: Record<string, string> = {
-    forbidden: isZh ? "這個帳號沒有控制權限。" : "This account does not have permission to control the service.",
-    already_running: isZh ? `${targetLabel} 已經在執行中。` : `${targetLabel} is already running.`,
-    not_running: isZh ? `${targetLabel} 目前沒有在執行。` : `${targetLabel} is not currently running.`,
-    not_found: isZh ? `找不到 ${targetLabel} 的執行紀錄。` : `No run record was found for ${targetLabel}.`,
-    control_unavailable: isZh ? "後台控制功能尚未正確設定。" : "Workflow control is not configured correctly yet.",
-    invalid_action: isZh ? "這個控制動作無效。" : "That control action is not valid.",
-    control_failed: isZh ? "控制要求失敗，請查看 API 日誌。" : "Control request failed. Check the API logs.",
-    docker_unavailable: isZh ? "API 容器目前無法連到 Docker。" : "The API container cannot reach Docker right now.",
-    image_missing: isZh ? "需要的 Docker image 不存在。" : "A required Docker image is missing.",
-    start_failed: isZh ? `${targetLabel} 啟動失敗。` : `${targetLabel} failed to start.`,
-    stop_failed: isZh ? `${targetLabel} 停止失敗。` : `${targetLabel} failed to stop.`
+    forbidden: "This account does not have permission to control the service.",
+    already_running: `${targetLabel} is already running.`,
+    not_running: `${targetLabel} is not currently running.`,
+    not_found: `No run record was found for ${targetLabel}.`,
+    control_unavailable: "Workflow control is not configured correctly yet.",
+    invalid_action: "That control action is not valid.",
+    control_failed: "Control request failed. Check the API logs.",
+    docker_unavailable: "The API container cannot reach Docker right now.",
+    image_missing: "A required Docker image is missing.",
+    start_failed: `${targetLabel} failed to start.`,
+    stop_failed: `${targetLabel} failed to stop.`
   };
 
   if (params.notice && code in success) {
@@ -93,7 +93,6 @@ export default async function PaperPage({
 }) {
   const user = await requireAuth();
   const copy = getMessages(user.locale);
-  const isZh = user.locale === "zh-Hant";
   const [overview, targets, positions, orders, history] = await Promise.all([
     getPaperOverview(),
     getPaperTargets(20),
@@ -103,12 +102,12 @@ export default async function PaperPage({
   ]);
   const isAdmin = user.role === "admin";
   const params = (await searchParams) ?? {};
-  const flash = flashMessage(isZh, params);
+  const flash = flashMessage(false, params);
   const daemon = overview.daemon;
   const gateway = overview.gateway;
   const liveSummary = (overview.live_summary ?? {}) as Record<string, unknown>;
   const state = overview.state ?? {};
-  const priceLimitErrorLabel = isZh ? "委託價格超出當日漲跌停範圍" : "price outside CN daily limit band";
+  const priceLimitErrorLabel = "price outside CN daily limit band";
   const recentOrders = orders.orders as Array<Record<string, unknown>>;
   const ordersBySymbol = new Map<string, Record<string, unknown>>();
   for (const order of recentOrders) {
@@ -133,88 +132,46 @@ export default async function PaperPage({
       sent_error: row.sent_error ?? (String(row.action ?? "") === "SKIP_PRICE_LIMIT" ? priceLimitErrorLabel : null)
     };
   });
-  const targetColumns = isZh
-    ? [
-        { key: "signal_date", label: "訊號日" },
-        { key: "rank", label: "排名" },
-        { key: "code", label: "代碼" },
-        { key: "name", label: "名稱" },
-        { key: "close", label: "快照收盤" },
-        { key: "buy_order_qty", label: "買進股數" },
-        { key: "buy_limit_price", label: "計畫買價" },
-        { key: "sent_price", label: "實際送價" },
-        { key: "sent_status", label: "送單狀態" },
-        { key: "sent_order_id", label: "委託單號" },
-        { key: "dealt_qty", label: "已成交量" },
-        { key: "order_updated_at", label: "委託更新" },
-        { key: "sent_error", label: "錯誤" }
-      ]
-    : [
-        { key: "signal_date", label: "Signal Date" },
-        { key: "rank", label: "Rank" },
-        { key: "code", label: "Code" },
-        { key: "name", label: "Name" },
-        { key: "close", label: "Snapshot Close" },
-        { key: "buy_order_qty", label: "Planned Buy Qty" },
-        { key: "buy_limit_price", label: "Planned Buy Price" },
-        { key: "sent_price", label: "Sent Price" },
-        { key: "sent_status", label: "Sent Status" },
-        { key: "sent_order_id", label: "Order ID" },
-        { key: "dealt_qty", label: "Dealt Qty" },
-        { key: "order_updated_at", label: "Order Updated" },
-        { key: "sent_error", label: "Error" }
-      ];
-  const orderColumns = isZh
-    ? [
-        { key: "broker_order_id", label: "委託單號" },
-        { key: "market", label: "市場" },
-        { key: "symbol", label: "代碼" },
-        { key: "side", label: "方向" },
-        { key: "order_type", label: "類型" },
-        { key: "order_status", label: "狀態" },
-        { key: "quantity", label: "委託量" },
-        { key: "price", label: "委託價" },
-        { key: "dealt_qty", label: "已成交量" },
-        { key: "dealt_avg_price", label: "成交均價" },
-        { key: "created_at", label: "建立時間" },
-        { key: "updated_at", label: "更新時間" },
-        { key: "remark", label: "備註" }
-      ]
-    : [
-        { key: "broker_order_id", label: "Order ID" },
-        { key: "market", label: "Market" },
-        { key: "symbol", label: "Symbol" },
-        { key: "side", label: "Side" },
-        { key: "order_type", label: "Type" },
-        { key: "order_status", label: "Status" },
-        { key: "quantity", label: "Qty" },
-        { key: "price", label: "Price" },
-        { key: "dealt_qty", label: "Dealt Qty" },
-        { key: "dealt_avg_price", label: "Dealt Avg Price" },
-        { key: "created_at", label: "Created At" },
-        { key: "updated_at", label: "Updated At" },
-        { key: "remark", label: "Remark" }
-      ];
-  const historyColumns = isZh
-    ? [
-        { key: "recorded_at", label: "記錄時間" },
-        { key: "status", label: "狀態" },
-        { key: "score_signal_date", label: "訊號日" },
-        { key: "placed_order_ids", label: "送出單號" },
-        { key: "skipped_symbols", label: "跳過代碼" },
-        { key: "message", label: "訊息" }
-      ]
-    : [
-        { key: "recorded_at", label: "Recorded At" },
-        { key: "status", label: "Status" },
-        { key: "score_signal_date", label: "Signal Date" },
-        { key: "placed_order_ids", label: "Placed Order IDs" },
-        { key: "skipped_symbols", label: "Skipped Symbols" },
-        { key: "message", label: "Message" }
-      ];
-  const pricingHint = isZh
-    ? "快照收盤與計畫買價來自目前 signal snapshot。若 Gateway 接受不同價格，實際送價與委託狀態會顯示在同一列。"
-    : "Snapshot close and planned buy price come from the current signal snapshot. If the gateway accepts a different fallback price, the actual sent price and order status are shown in the same row.";
+  const targetColumns = [
+    { key: "signal_date", label: "Signal Date" },
+    { key: "rank", label: "Rank" },
+    { key: "code", label: "Code" },
+    { key: "name", label: "Name" },
+    { key: "close", label: "Snapshot Close" },
+    { key: "buy_order_qty", label: "Planned Buy Qty" },
+    { key: "buy_limit_price", label: "Planned Buy Price" },
+    { key: "sent_price", label: "Sent Price" },
+    { key: "sent_status", label: "Sent Status" },
+    { key: "sent_order_id", label: "Order ID" },
+    { key: "dealt_qty", label: "Dealt Qty" },
+    { key: "order_updated_at", label: "Order Updated" },
+    { key: "sent_error", label: "Error" }
+  ];
+  const orderColumns = [
+    { key: "broker_order_id", label: "Order ID" },
+    { key: "market", label: "Market" },
+    { key: "symbol", label: "Symbol" },
+    { key: "side", label: "Side" },
+    { key: "order_type", label: "Type" },
+    { key: "order_status", label: "Status" },
+    { key: "quantity", label: "Qty" },
+    { key: "price", label: "Price" },
+    { key: "dealt_qty", label: "Dealt Qty" },
+    { key: "dealt_avg_price", label: "Dealt Avg Price" },
+    { key: "created_at", label: "Created At" },
+    { key: "updated_at", label: "Updated At" },
+    { key: "remark", label: "Remark" }
+  ];
+  const historyColumns = [
+    { key: "recorded_at", label: "Recorded At" },
+    { key: "status", label: "Status" },
+    { key: "score_signal_date", label: "Signal Date" },
+    { key: "placed_order_ids", label: "Placed Order IDs" },
+    { key: "skipped_symbols", label: "Skipped Symbols" },
+    { key: "message", label: "Message" }
+  ];
+  const pricingHint =
+    "Snapshot close and planned buy price come from the current signal snapshot. If the gateway accepts a different fallback price, the actual sent price and order status are shown in the same row.";
 
   return (
     <Shell

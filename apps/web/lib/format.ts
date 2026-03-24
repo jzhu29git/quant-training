@@ -9,7 +9,7 @@ type NumberOptions = {
 };
 
 function localeTag(locale: PanelLocale) {
-  return locale === "zh-Hant" ? "zh-TW" : "en-US";
+  return "en-US";
 }
 
 function isDateOnlyString(value: string) {
@@ -232,7 +232,7 @@ export function formatDateRange(
 ) {
   const start = formatDate(value?.date_min, locale);
   const end = formatDate(value?.date_max, locale);
-  return `${start} ${joiner ?? (locale === "zh-Hant" ? "至" : "to")} ${end}`;
+  return `${start} ${joiner ?? "to"} ${end}`;
 }
 
 export function formatDisplayValue(
@@ -254,7 +254,7 @@ export function formatDisplayValue(
     return value.length ? value.map((item) => formatDisplayValue(item, { locale, key })).join(", ") : EMPTY_VALUE;
   }
   if (typeof value === "boolean") {
-    return value ? (locale === "zh-Hant" ? "是" : "Yes") : (locale === "zh-Hant" ? "否" : "No");
+    return value ? "Yes" : "No";
   }
   if (typeof value === "number") {
     return formatNumber(value, locale, { maximumFractionDigits: numericDigitsForKey(normalizedKey, value) });

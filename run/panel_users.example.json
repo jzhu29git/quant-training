@@ -9,9 +9,8 @@
   {
     "username": "viewer",
     "password": "change-me-viewer-password",
-    "locale": "zh-Hant",
+    "locale": "en",
     "display_name": "Viewer",
     "role": "viewer"
   }
 ]
-
