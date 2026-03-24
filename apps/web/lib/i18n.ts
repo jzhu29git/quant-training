@@ -193,7 +193,7 @@ const messages: Messages = {
     password: "Password",
     submit: "Enter Dashboard",
     error: "Invalid username or password.",
-    accountHint: "The public portfolio build is English-only."
+    accountHint: "This shared deployment is configured with English public copy."
   },
   shell: {
     signedInAs: "Signed in as",

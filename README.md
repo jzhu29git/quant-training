@@ -1,8 +1,8 @@
 # AistockCN Quant Trading System
 
-AistockCN is a full-stack quant research and operations project for the China A-share market. The public repo is intentionally trimmed for portfolio review: it keeps the application code, workflow orchestration, architecture docs, and deployment setup, while excluding local datasets, logs, and runtime secrets.
+AistockCN is a full-stack quant research and operations project for the China A-share market. This shared source repository keeps the application code, workflow orchestration, architecture docs, and deployment setup while excluding local datasets, logs, and runtime secrets.
 
-## What This Project Shows
+## Core Capabilities
 
 - End-to-end market-data ingestion for the full A-share universe
 - Feature engineering for training and inference snapshots
@@ -99,9 +99,9 @@ bash run_step6_backtest.sh
 bash run_paper_trading_daemon.sh
 ```
 
-## Public Repo Notes
+## Shared Repository Notes
 
-This public snapshot excludes:
+This shared source snapshot excludes:
 
 - `quant_data/`
 - `logs/`
@@ -119,9 +119,9 @@ Safe examples are included instead:
 - [System Design Spec](docs/SYSTEM_DESIGN_SPEC.md)
 - [System Manual](docs/SYSTEM_MANUAL.md)
 
-## Interviewer Summary
+## Engineering Scope
 
-This repository is meant to show practical engineering range, not only model experimentation:
+This codebase covers practical production-oriented engineering work, not only model experimentation:
 
 - backend API design
 - frontend dashboard implementation
