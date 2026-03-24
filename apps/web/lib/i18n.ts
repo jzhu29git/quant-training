@@ -193,7 +193,7 @@ const messages: Messages = {
     password: "Password",
     submit: "Enter Dashboard",
     error: "Invalid username or password.",
-    accountHint: "This shared deployment is configured with English public copy."
+    accountHint: "Guest access is available with username guest and password guest."
   },
   shell: {
     signedInAs: "Signed in as",

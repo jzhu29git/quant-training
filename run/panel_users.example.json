@@ -7,10 +7,10 @@
     "role": "admin"
   },
   {
-    "username": "viewer",
-    "password": "change-me-viewer-password",
+    "username": "guest",
+    "password": "guest",
     "locale": "en",
-    "display_name": "Viewer",
+    "display_name": "Guest",
     "role": "viewer"
   }
 ]

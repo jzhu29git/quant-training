@@ -50,12 +50,14 @@ export default async function HomePage() {
                 <p className="eyebrow hero-dark-eyebrow">{copy.brand}</p>
                 <h1 className="text-gradient-accent">Quant Training</h1>
                 <p className="hero-panel-copy hero-panel-copy-lead">
-                  From local A-share data ingestion to LightGBM training, walk-forward backtests, and ranked signal
-                  delivery, Aistock turns quant experimentation into an operator-grade system that feels ready on day one.
+                  From raw data to live trades.
+                  A full-stack quant research and execution system with feature pipelines, model training,
+                  walk-forward backtests, signal ranking, and broker-connected deployment.
                 </p>
                 <p className="hero-panel-note">
-                  Tech Stack: Next.js 15, React 19, TypeScript, FastAPI, Uvicorn, Pandas, PyArrow, LightGBM,
-                  scikit-learn, AkShare/BaoStock data ingestion, and Docker Compose deployment.
+                  Tech Stack: Python, TypeScript, Next.js, React, FastAPI, Uvicorn, Pandas, PyArrow, LightGBM,
+                  scikit-learn, BaoStock, AKShare, parquet-based data pipelines, workflow orchestration,
+                  paper-trading automation, Docker, and Docker Compose.
                 </p>
               </div>
 

@@ -244,7 +244,7 @@ export function formatDisplayValue(
     locale: PanelLocale;
     key?: string;
   }
-) {
+): string {
   const normalizedKey = (key ?? "").toLowerCase();
 
   if (value === null || value === undefined || value === "") {
