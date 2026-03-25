@@ -62,5 +62,10 @@ cp run/panel.env.example run/panel.env
 cp run/panel_users.example.json run/panel_users.json
 ```
 
-Update those local copies with your own values before starting the panel.
+Update those local copies with your own secrets before starting the panel.
+Panel users now use `password_hash` entries instead of plaintext `password`.
+Generate a new hash with:
 
+```bash
+node apps/web/scripts/hash-password.mjs 'replace-with-a-real-password'
+```

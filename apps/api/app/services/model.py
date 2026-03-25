@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,25 @@ def _safe_read_parquet(path: Path, columns: list[str] | None = None) -> pd.DataF
         return pd.read_parquet(path, columns=columns)
     except (pa.ArrowException, OSError, ValueError):
         return pd.DataFrame()
+
+
+def _file_updated_at(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat()
+    except OSError:
+        return None
+
+
+def _parquet_date_max(path: Path, *, column: str) -> str | None:
+    frame = _safe_read_parquet(path, columns=[column])
+    if frame.empty or column not in frame.columns:
+        return None
+    date_series = pd.to_datetime(frame[column], errors="coerce")
+    if date_series.dropna().empty:
+        return None
+    return pd.Timestamp(date_series.max()).date().isoformat()
 
 
 def _enrich_backtest_profile(summary: dict[str, Any], profiles: list[dict[str, Any]]) -> dict[str, Any]:
@@ -145,18 +165,68 @@ def get_model_overview() -> dict[str, Any]:
 def get_latest_picks(*, limit: int = 25) -> dict[str, Any]:
     settings = get_settings()
     scores_path = settings.models_dir / "inference_scores_latest.parquet"
+    features_path = settings.quant_dir / "inference_features_latest.parquet"
     scores_df = _safe_read_parquet(scores_path)
+    feature_time = _file_updated_at(features_path)
+    model_time = _file_updated_at(scores_path)
+    source_close_date = _parquet_date_max(features_path, column="date")
+    raw_sync_date = _parquet_date_max(settings.stock_list_path, column="trade_date") or _parquet_date_max(
+        settings.stock_registry_path,
+        column="trade_date",
+    )
     if scores_df.empty:
-        return {"rows": 0, "latest_date": None, "picks": []}
+        return {
+            "rows": 0,
+            "latest_date": None,
+            "source_close_date": source_close_date,
+            "raw_sync_date": raw_sync_date,
+            "feature_time": feature_time,
+            "data_src_time": feature_time,
+            "model_time": model_time,
+            "picks": [],
+        }
 
+    latest_signal_date = None
+    snapshot_df = scores_df.copy()
     if "date" in scores_df.columns:
         scores_df["date"] = pd.to_datetime(scores_df["date"], errors="coerce")
-    top_df = scores_df.sort_values("score", ascending=False).head(limit).copy()
+        latest_signal = scores_df["date"].max()
+        if not pd.isna(latest_signal):
+            latest_signal_date = pd.Timestamp(latest_signal).date().isoformat()
+            snapshot_df = scores_df.loc[scores_df["date"].eq(latest_signal)].copy()
+
+    top_df = snapshot_df.sort_values("score", ascending=False).head(limit).copy()
+    if "date" in top_df.columns:
+        top_df.insert(0, "signal_date", top_df["date"].dt.strftime("%Y-%m-%d"))
     top_df.insert(0, "rank", range(1, len(top_df) + 1))
-    ordered_columns = [col for col in ["rank", "date", "code", "name", "industry", "score", "close", "bias_20", "pe_ttm", "pb"] if col in top_df.columns]
-    latest_date = to_jsonable(top_df["date"].max()) if "date" in top_df.columns else None
+    top_df["feature_time"] = feature_time
+    top_df["data_src_time"] = feature_time
+    top_df["model_time"] = model_time
+    ordered_columns = [
+        col
+        for col in [
+            "rank",
+            "signal_date",
+            "feature_time",
+            "model_time",
+            "code",
+            "name",
+            "industry",
+            "score",
+            "close",
+            "bias_20",
+            "pe_ttm",
+            "pb",
+        ]
+        if col in top_df.columns
+    ]
     return {
         "rows": int(len(scores_df)),
-        "latest_date": latest_date,
+        "latest_date": latest_signal_date,
+        "source_close_date": source_close_date or latest_signal_date,
+        "raw_sync_date": raw_sync_date,
+        "feature_time": feature_time,
+        "data_src_time": feature_time,
+        "model_time": model_time,
         "picks": records_to_json(top_df[ordered_columns].to_dict(orient="records")),
     }

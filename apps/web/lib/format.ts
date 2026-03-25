@@ -1,6 +1,7 @@
 import type { PanelLocale } from "@/lib/i18n";
 
 const EMPTY_VALUE = "—";
+const PANEL_DISPLAY_TIME_ZONE = "Asia/Shanghai";
 
 type NumberOptions = {
   maximumFractionDigits?: number;
@@ -187,7 +188,7 @@ export function formatDate(value: unknown, locale: PanelLocale) {
       year: "numeric",
       month: "short",
       day: "numeric",
-      timeZone: "UTC"
+      timeZone: PANEL_DISPLAY_TIME_ZONE
     }).format(date);
   }
   const date = value instanceof Date ? value : new Date(String(value));
@@ -197,7 +198,8 @@ export function formatDate(value: unknown, locale: PanelLocale) {
   return new Intl.DateTimeFormat(localeTag(locale), {
     year: "numeric",
     month: "short",
-    day: "numeric"
+    day: "numeric",
+    timeZone: PANEL_DISPLAY_TIME_ZONE
   }).format(date);
 }
 
@@ -215,7 +217,8 @@ export function formatDateTime(value: unknown, locale: PanelLocale) {
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false
+    hour12: false,
+    timeZone: PANEL_DISPLAY_TIME_ZONE
   }).format(date);
 }
 

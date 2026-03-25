@@ -1,7 +1,7 @@
-akshare
-baostock
-fastparquet
-lightgbm
-pandas
-pyarrow
-scikit-learn
+akshare==1.18.46
+baostock==0.8.9
+fastparquet==2026.3.0
+lightgbm==4.6.0
+pandas==3.0.1
+pyarrow==23.0.1
+scikit-learn==1.8.0

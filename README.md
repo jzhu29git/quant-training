@@ -83,6 +83,16 @@ cp run/panel_users.example.json run/panel_users.json
 docker compose up -d panel-api panel-web
 ```
 
+Before first start, replace the example auth secrets and password hashes in those local copies.
+Generate a new hash with:
+
+```bash
+node apps/web/scripts/hash-password.mjs 'replace-with-a-real-password'
+```
+
+If you use the single-user env fallback instead of `run/panel_users.json`, set `PANEL_PASSWORD_HASH` rather than `PANEL_PASSWORD`.
+The default API IP policy is `localhost` plus the local `panel-web` service only, not the whole Compose subnet.
+
 Panel endpoints:
 
 - Web: `http://localhost:3030`
@@ -92,10 +102,10 @@ Panel endpoints:
 
 ```bash
 bash run_a_share_3y_batch.sh
-bash run_step3_feature_engineering.sh
-bash run_step4_inference_features.sh
-bash run_step5_train_score.sh
-bash run_step6_backtest.sh
+bash run_step2_feature_engineering.sh
+bash run_step3_inference_features.sh
+bash run_step4_train_score.sh
+bash run_step5_backtest.sh
 bash run_paper_trading_daemon.sh
 ```
 

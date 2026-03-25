@@ -21,6 +21,10 @@ export type BatchStatus = {
   container_name?: string | null;
   container_status?: string | null;
   container_running_for?: string | null;
+  container_started_at?: string | null;
+  container_finished_at?: string | null;
+  container_exit_code?: number | null;
+  oom_killed?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
   start_date?: string | null;
@@ -229,6 +233,11 @@ export type ModelOverview = {
 export type PicksOverview = {
   rows: number;
   latest_date?: string | null;
+  source_close_date?: string | null;
+  raw_sync_date?: string | null;
+  feature_time?: string | null;
+  data_src_time?: string | null;
+  model_time?: string | null;
   picks: Array<Record<string, unknown>>;
 };
 

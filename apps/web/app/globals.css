@@ -767,35 +767,50 @@ input {
 
 .panel {
   padding: 20px;
+  min-width: 0;
 }
 
 .panel-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 16px;
+}
+
+.panel-header > * {
+  min-width: 0;
 }
 
 .panel h2 {
   margin: 0;
   font-size: 1.2rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .panel-copy {
   margin: 0;
   line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .pill {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+  max-width: 100%;
+  min-width: 0;
   padding: 8px 12px;
   border-radius: 999px;
   font-size: 0.88rem;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.6);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .pill.live {
@@ -813,6 +828,21 @@ input {
 .status-meta {
   display: grid;
   gap: 8px;
+  min-width: 0;
+}
+
+.meta-item {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.meta-label {
+  font-weight: 500;
+}
+
+.meta-value {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .log-console {
@@ -872,12 +902,36 @@ input {
 .stack {
   display: grid;
   gap: 14px;
+  min-width: 0;
 }
 
 .inline-pill-row {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  min-width: 0;
+}
+
+.inline-pill-row > * {
+  min-width: 0;
+}
+
+.pill-primary {
+  flex: 1 1 100%;
+}
+
+.pill-wrap {
+  align-items: flex-start;
+}
+
+.pill-label {
+  font-weight: 500;
+}
+
+.pill-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .workflow-grid,
@@ -901,7 +955,7 @@ input {
 }
 
 .control-center-grid {
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
 }
 
 .workflow-step-card,
@@ -968,12 +1022,13 @@ input {
 .detail-list {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .detail-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
   align-items: flex-start;
-  justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
   border-radius: 14px;
@@ -982,8 +1037,15 @@ input {
   font-size: 0.93rem;
 }
 
+.detail-label,
+.detail-value {
+  min-width: 0;
+}
+
 .detail-row strong {
   text-align: right;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .status-warn {

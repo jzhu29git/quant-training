@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, scryptSync, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 
 import { cookies } from "next/headers";
@@ -11,7 +11,16 @@ export const SESSION_COOKIE = "aistockcn_panel_session";
 
 type StoredPanelUser = {
   username: string;
-  password: string;
+  password_hash?: string;
+  password?: string;
+  locale?: string;
+  display_name?: string;
+  role?: string;
+};
+
+type LoadedPanelUser = {
+  username: string;
+  password_hash: string;
   locale?: string;
   display_name?: string;
   role?: string;
@@ -38,9 +47,9 @@ function authSecret() {
   return requiredEnv("PANEL_AUTH_SECRET");
 }
 
-function tokenMatches(a: string, b: string) {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
+function tokenMatches(a: string | Buffer, b: string | Buffer) {
+  const left = typeof a === "string" ? Buffer.from(a) : a;
+  const right = typeof b === "string" ? Buffer.from(b) : b;
   if (left.length !== right.length) {
     return false;
   }
@@ -55,7 +64,7 @@ function normalizeRole(value?: string): PanelRole {
   return value === "admin" ? "admin" : "viewer";
 }
 
-function sanitizeUser(user: StoredPanelUser): PanelUser {
+function sanitizeUser(user: LoadedPanelUser): PanelUser {
   return {
     username: user.username,
     locale: normalizeLocale(user.locale),
@@ -68,23 +77,53 @@ function usersFilePath() {
   return process.env.PANEL_USERS_FILE?.trim();
 }
 
-function loadUsers(): StoredPanelUser[] {
+function normalizeStoredUser(user: StoredPanelUser): LoadedPanelUser | null {
+  const username = String(user?.username ?? "").trim();
+  const passwordHash = String(user?.password_hash ?? "").trim();
+  if (!username || !passwordHash) {
+    return null;
+  }
+  return {
+    username,
+    password_hash: passwordHash,
+    locale: user.locale,
+    display_name: user.display_name,
+    role: user.role
+  };
+}
+
+function loadUsers(): LoadedPanelUser[] {
   const filePath = usersFilePath();
   if (filePath && existsSync(filePath)) {
     const parsed = JSON.parse(readFileSync(filePath, "utf8")) as StoredPanelUser[];
-    return parsed.filter((user) => user?.username && user?.password);
+    if (!Array.isArray(parsed)) {
+      throw new Error(`Panel users file ${filePath} must contain a JSON array.`);
+    }
+    if (parsed.some((user) => user?.username && user?.password && !user?.password_hash)) {
+      throw new Error(`Panel users file ${filePath} still uses plaintext passwords. Replace password with password_hash.`);
+    }
+    const users = parsed
+      .map((user) => normalizeStoredUser(user))
+      .filter((user): user is LoadedPanelUser => user !== null);
+    if (users.length === 0) {
+      throw new Error(`No panel users configured in ${filePath}. Provide username plus password_hash entries.`);
+    }
+    return users;
   }
 
-  const fallbackUsername = process.env.PANEL_USERNAME;
-  const fallbackPassword = process.env.PANEL_PASSWORD;
-  if (!fallbackUsername || !fallbackPassword) {
-    throw new Error("No panel users configured. Provide PANEL_USERS_FILE or fallback PANEL_USERNAME/PANEL_PASSWORD.");
+  const fallbackUsername = process.env.PANEL_USERNAME?.trim();
+  const fallbackPasswordHash = process.env.PANEL_PASSWORD_HASH?.trim();
+  if (fallbackUsername && process.env.PANEL_PASSWORD && !fallbackPasswordHash) {
+    throw new Error("Legacy PANEL_PASSWORD is no longer supported. Use PANEL_PASSWORD_HASH.");
+  }
+  if (!fallbackUsername || !fallbackPasswordHash) {
+    throw new Error("No panel users configured. Provide PANEL_USERS_FILE or fallback PANEL_USERNAME/PANEL_PASSWORD_HASH.");
   }
 
   return [
     {
       username: fallbackUsername,
-      password: fallbackPassword,
+      password_hash: fallbackPasswordHash,
       locale: "en",
       display_name: fallbackUsername,
       role: "admin"
@@ -96,8 +135,27 @@ function findStoredUser(username: string) {
   return loadUsers().find((user) => user.username === username);
 }
 
-function passwordMatches(candidate: string, expected: string) {
-  return tokenMatches(candidate, expected);
+function passwordMatches(candidate: string, expectedHash: string) {
+  const [algorithm, saltHex, digestHex] = expectedHash.split("$");
+  if (algorithm !== "scrypt" || !saltHex || !digestHex) {
+    return false;
+  }
+
+  try {
+    const salt = Buffer.from(saltHex, "hex");
+    const expectedDigest = Buffer.from(digestHex, "hex");
+    if (salt.length === 0 || expectedDigest.length === 0) {
+      return false;
+    }
+    const candidateDigest = scryptSync(candidate, salt, expectedDigest.length, {
+      N: 16384,
+      r: 8,
+      p: 1
+    });
+    return tokenMatches(candidateDigest, expectedDigest);
+  } catch {
+    return false;
+  }
 }
 
 export function createSessionToken(username: string, secret: string) {
@@ -165,7 +223,7 @@ export function authenticateUser(username: string, password: string) {
     return null;
   }
 
-  return passwordMatches(password, storedUser.password) ? sanitizeUser(storedUser) : null;
+  return passwordMatches(password, storedUser.password_hash) ? sanitizeUser(storedUser) : null;
 }
 
 function firstHeaderValue(value: string | null) {

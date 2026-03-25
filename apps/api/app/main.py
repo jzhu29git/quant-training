@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
+import socket
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -49,6 +50,26 @@ def _allowed_networks() -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, 
     return tuple(networks)
 
 
+def _allowed_service_ips() -> tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, ...]:
+    allowed: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
+    seen: set[str] = set()
+    for service_name in get_settings().panel_api_allowed_service_names:
+        try:
+            infos = socket.getaddrinfo(service_name, None, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
+        except socket.gaierror:
+            continue
+        for info in infos:
+            raw_ip = info[4][0]
+            if raw_ip in seen:
+                continue
+            seen.add(raw_ip)
+            try:
+                allowed.append(ipaddress.ip_address(raw_ip))
+            except ValueError:
+                continue
+    return tuple(allowed)
+
+
 ALLOWED_NETWORKS = _allowed_networks()
 
 
@@ -63,10 +84,10 @@ async def restrict_api_clients(request: Request, call_next):
     except ValueError:
         return JSONResponse(status_code=403, content={"detail": "API client IP invalid."})
 
-    if not any(client_ip in network for network in ALLOWED_NETWORKS):
-        return JSONResponse(status_code=403, content={"detail": "API access is restricted to localhost/internal clients."})
+    if any(client_ip in network for network in ALLOWED_NETWORKS) or client_ip in _allowed_service_ips():
+        return await call_next(request)
 
-    return await call_next(request)
+    return JSONResponse(status_code=403, content={"detail": "API access is restricted to localhost and trusted local services."})
 
 
 app.include_router(status_router)

@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const action = String(formData.get("action") ?? "").trim();
   const rawTarget = String(formData.get("target") ?? "step1").trim();
+  // Keep bookmarked forms from the pre-renumbered UI working.
   const target = rawTarget === "step12" ? "step1" : rawTarget;
   const profile = String(formData.get("profile") ?? "").trim();
 

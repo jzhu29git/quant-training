@@ -41,10 +41,10 @@ The repository includes dedicated runner scripts for stable container naming, lo
 
 - `run_a_share_3y_batch.sh`
 - `run_full_market_3y_batch.sh`
-- `run_step3_feature_engineering.sh`
-- `run_step4_inference_features.sh`
-- `run_step5_train_score.sh`
-- `run_step6_backtest.sh`
+- `run_step2_feature_engineering.sh`
+- `run_step3_inference_features.sh`
+- `run_step4_train_score.sh`
+- `run_step5_backtest.sh`
 - `run_paper_trading_daemon.sh`
 
 ## Artifact Philosophy
@@ -56,4 +56,3 @@ This project relies on simple, inspectable artifacts instead of hiding state beh
 - log files for batch and daemon visibility
 
 That choice makes the system easier to debug, demo, and operate in a small-team environment.
-

@@ -1,16 +1,16 @@
 [
   {
     "username": "admin",
-    "password": "change-me-admin-password",
+    "password_hash": "scrypt$e155f372800be51f1862eee25fe76f4c$b81711b238579c72839a32ab83bbc5c4b94907ad9f87fa3dc0f83a4a05d24d3270551f3c595edafaec77f46f5f2a7735baac69d9cce4b1795729483d715b62ad",
     "locale": "en",
     "display_name": "Quant Admin",
     "role": "admin"
   },
   {
-    "username": "guest",
-    "password": "guest",
+    "username": "viewer",
+    "password_hash": "scrypt$b7639f719292d3d65d0b2ee3d44a9eb0$847ae65762ec1b96861436280e2ba81487449e09f5f28c9dfe401bead8e3792309c7f33633a91b2285964fe54d418d08e11c6338a8c6dd4d294968240c398502",
     "locale": "en",
-    "display_name": "Guest",
+    "display_name": "Viewer",
     "role": "viewer"
   }
 ]

@@ -147,8 +147,7 @@ export default async function BatchPage({
     step4: isZh ? "Step 4 訓練與打分" : "Step 4 Train and Score",
     step5: isZh ? "Backtest" : "Backtest",
     step6: isZh ? "自動模擬交易" : "Auto Paper Trading",
-    paper: isZh ? "自動模擬交易" : "Auto Paper Trading",
-    step12: isZh ? "Step 1 資料準備" : "Step 1 Data Prepare"
+    paper: isZh ? "自動模擬交易" : "Auto Paper Trading"
   };
   const flash = flashMessage(isZh, params, stepLabels);
   const runtimeByStep = new Map(workflow.steps.map((step) => [step.step, step]));
@@ -255,11 +254,11 @@ export default async function BatchPage({
                 : "This control now runs only the daily trading steps: 1, 2, 3, and 4. Backtest is separate and no longer blocks the nightly flow."}
             </p>
             <div className="status-meta">
-              <span>{isZh ? "目前步驟" : "Current step"}: {pipeline.current_step_label ?? "—"}</span>
-              <span>{isZh ? "已完成" : "Completed"}: {completedStepsLabel || "—"}</span>
-              <span>{isZh ? "容器" : "Container"}: {pipeline.container_name ?? "—"}</span>
-              <span>{isZh ? "狀態更新" : "Updated"}: {formatDateTime(pipeline.updated_at, user.locale)}</span>
-              <span>{isZh ? "日誌來源" : "Log source"}: {pipeline.log_source ?? "—"}</span>
+              <span className="meta-item"><span className="meta-label">{isZh ? "目前步驟" : "Current step"}:</span> <span className="meta-value">{pipeline.current_step_label ?? "—"}</span></span>
+              <span className="meta-item"><span className="meta-label">{isZh ? "已完成" : "Completed"}:</span> <span className="meta-value">{completedStepsLabel || "—"}</span></span>
+              <span className="meta-item"><span className="meta-label">{isZh ? "容器" : "Container"}:</span> <span className="meta-value">{pipeline.container_name ?? "—"}</span></span>
+              <span className="meta-item"><span className="meta-label">{isZh ? "狀態更新" : "Updated"}:</span> <span className="meta-value">{formatDateTime(pipeline.updated_at, user.locale)}</span></span>
+              <span className="meta-item"><span className="meta-label">{isZh ? "日誌來源" : "Log source"}:</span> <span className="meta-value">{pipeline.log_source ?? "—"}</span></span>
             </div>
             {pipeline.error_message ? (
               <p className="panel-copy status-warn">{isZh ? `錯誤: ${pipeline.error_message}` : `Error: ${pipeline.error_message}`}</p>
@@ -290,21 +289,30 @@ export default async function BatchPage({
             <div className="stack">
               <p className="panel-copy">{card.description}</p>
               <div className="inline-pill-row">
-                <span className="pill">{isZh ? "Artifact" : "Artifact"}: {stepArtifact(card.runtime)}</span>
-                <span className="pill">{isZh ? "Size" : "Size"}: {formatBytes(card.runtime?.artifact_size_bytes, user.locale)}</span>
-                <span className="pill">{isZh ? "Log" : "Log"}: {card.runtime?.latest_log_source ?? "—"}</span>
+                <span className="pill pill-wrap pill-primary">
+                  <span className="pill-label">{isZh ? "Artifact" : "Artifact"}:</span>
+                  <span className="pill-value">{stepArtifact(card.runtime)}</span>
+                </span>
+                <span className="pill pill-wrap">
+                  <span className="pill-label">{isZh ? "Size" : "Size"}:</span>
+                  <span className="pill-value">{formatBytes(card.runtime?.artifact_size_bytes, user.locale)}</span>
+                </span>
+                <span className="pill pill-wrap">
+                  <span className="pill-label">{isZh ? "Log" : "Log"}:</span>
+                  <span className="pill-value">{card.runtime?.latest_log_source ?? "—"}</span>
+                </span>
               </div>
               <div className="status-meta">
-                <span>{isZh ? "容器" : "Container"}: {card.runtime?.container_name ?? "—"}</span>
-                <span>{isZh ? "容器狀態" : "Container status"}: {card.runtime?.container_status ?? "—"}</span>
-                <span>{isZh ? "開始時間" : "Started"}: {formatDateTime(card.runtime?.container_started_at, user.locale)}</span>
-                <span>{isZh ? "完成時間" : "Finished"}: {formatDateTime(card.runtime?.container_finished_at, user.locale)}</span>
+                <span className="meta-item"><span className="meta-label">{isZh ? "容器" : "Container"}:</span> <span className="meta-value">{card.runtime?.container_name ?? "—"}</span></span>
+                <span className="meta-item"><span className="meta-label">{isZh ? "容器狀態" : "Container status"}:</span> <span className="meta-value">{card.runtime?.container_status ?? "—"}</span></span>
+                <span className="meta-item"><span className="meta-label">{isZh ? "開始時間" : "Started"}:</span> <span className="meta-value">{formatDateTime(card.runtime?.container_started_at, user.locale)}</span></span>
+                <span className="meta-item"><span className="meta-label">{isZh ? "完成時間" : "Finished"}:</span> <span className="meta-value">{formatDateTime(card.runtime?.container_finished_at, user.locale)}</span></span>
               </div>
               <div className="detail-list">
                 {(card.runtime?.details ?? []).map((detail) => (
                   <div key={`${card.key}-${detail.label}`} className="detail-row">
-                    <span>{detail.label}</span>
-                    <strong>{formatDisplayValue(detail.value, { locale: user.locale, key: detail.label })}</strong>
+                    <span className="detail-label">{detail.label}</span>
+                    <strong className="detail-value">{formatDisplayValue(detail.value, { locale: user.locale, key: detail.label })}</strong>
                   </div>
                 ))}
               </div>

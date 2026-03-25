@@ -18,6 +18,8 @@ PIPELINE_LOG_TAIL = 40
 ORCHESTRATOR_IMAGE = "aistockcn-panel-api:latest"
 DATA_PREP_IMAGE = "aistockcn-data-prep:latest"
 PIPELINE_STEP_KEY_SCHEMA_VERSION = 2
+# Compatibility mapping for historical state files and old control URLs that
+# still use the pre-renumbered step keys.
 LEGACY_STEP1_ALIAS = "step12"
 LEGACY_PIPELINE_STEP_KEY_MAP = {
     "step12": "step1",
@@ -34,8 +36,11 @@ class StepControlSpec:
     label: str
     step_numbers: tuple[int, ...]
     pid_file_name: str
+    legacy_pid_file_names: tuple[str, ...]
     log_prefix: str
+    legacy_log_prefixes: tuple[str, ...]
     container_prefix: str
+    legacy_container_prefixes: tuple[str, ...]
     command_markers: tuple[str, ...]
     entrypoint: str
     command: tuple[str, ...]
@@ -46,9 +51,12 @@ STEP_CONTROL_SPECS: dict[str, StepControlSpec] = {
         key="step2",
         label="Step 2 Feature Engineering",
         step_numbers=(2,),
-        pid_file_name="step3_feature_engineering.pid",
-        log_prefix="step3_feature_engineering",
-        container_prefix="aistockcn-step3-feature-engineering-",
+        pid_file_name="step2_feature_engineering.pid",
+        legacy_pid_file_names=("step3_feature_engineering.pid",),
+        log_prefix="step2_feature_engineering",
+        legacy_log_prefixes=("step3_feature_engineering",),
+        container_prefix="aistockcn-step2-feature-engineering-",
+        legacy_container_prefixes=("aistockcn-step3-feature-engineering-",),
         command_markers=("feature_engineering.py",),
         entrypoint="python",
         command=(
@@ -71,9 +79,12 @@ STEP_CONTROL_SPECS: dict[str, StepControlSpec] = {
         key="step3",
         label="Step 3 Inference Features",
         step_numbers=(3,),
-        pid_file_name="step4_inference_features.pid",
-        log_prefix="step4_inference_features",
-        container_prefix="aistockcn-step4-inference-features-",
+        pid_file_name="step3_inference_features.pid",
+        legacy_pid_file_names=("step4_inference_features.pid",),
+        log_prefix="step3_inference_features",
+        legacy_log_prefixes=("step4_inference_features",),
+        container_prefix="aistockcn-step3-inference-features-",
+        legacy_container_prefixes=("aistockcn-step4-inference-features-",),
         command_markers=("build_inference_features.py",),
         entrypoint="python",
         command=(
@@ -90,9 +101,12 @@ STEP_CONTROL_SPECS: dict[str, StepControlSpec] = {
         key="step4",
         label="Step 4 Train And Score",
         step_numbers=(4,),
-        pid_file_name="step5_train_score.pid",
-        log_prefix="step5_train_score",
-        container_prefix="aistockcn-step5-train-score-",
+        pid_file_name="step4_train_score.pid",
+        legacy_pid_file_names=("step5_train_score.pid",),
+        log_prefix="step4_train_score",
+        legacy_log_prefixes=("step5_train_score",),
+        container_prefix="aistockcn-step4-train-score-",
+        legacy_container_prefixes=("aistockcn-step5-train-score-",),
         command_markers=("train_lightgbm.py",),
         entrypoint="python",
         command=(
@@ -115,9 +129,12 @@ STEP_CONTROL_SPECS: dict[str, StepControlSpec] = {
         key="step5",
         label="Backtest",
         step_numbers=(5,),
-        pid_file_name="step6_backtest.pid",
-        log_prefix="step6_backtest",
-        container_prefix="aistockcn-step6-backtest-",
+        pid_file_name="step5_backtest.pid",
+        legacy_pid_file_names=("step6_backtest.pid",),
+        log_prefix="step5_backtest",
+        legacy_log_prefixes=("step6_backtest",),
+        container_prefix="aistockcn-step5-backtest-",
+        legacy_container_prefixes=("aistockcn-step6-backtest-",),
         command_markers=("backtest_profile_runner.py",),
         entrypoint="python",
         command=(
@@ -151,8 +168,12 @@ def _state_file(path_name: str) -> Path:
     return get_settings().run_dir / path_name
 
 
-def _latest_matching_log_file(logs_dir: Path, pattern: str) -> Path | None:
-    candidates = sorted(logs_dir.glob(pattern), key=lambda path: path.stat().st_mtime)
+def _latest_matching_log_file(logs_dir: Path, patterns: str | list[str]) -> Path | None:
+    pattern_list = [patterns] if isinstance(patterns, str) else patterns
+    candidates: list[Path] = []
+    for pattern in pattern_list:
+        candidates.extend(logs_dir.glob(pattern))
+    candidates = sorted(candidates, key=lambda path: path.stat().st_mtime)
     return candidates[-1] if candidates else None
 
 
@@ -198,39 +219,54 @@ def _container_command(container: Any) -> str:
 
 def _find_latest_matching_container(
     *,
-    pid_file: Path | None = None,
+    pid_files: list[Path] | None = None,
     name_prefixes: list[str] | None = None,
     command_markers: list[str] | None = None,
 ) -> Any | None:
-    if pid_file is not None and pid_file.exists():
+    matched: list[Any] = []
+    seen_ids: set[str] = set()
+
+    for pid_file in pid_files or []:
+        if not pid_file.exists():
+            continue
         container_ref = pid_file.read_text(encoding="utf-8").strip()
-        if container_ref:
-            container = _get_container_by_ref(container_ref)
-            if container is not None:
-                return container
+        if not container_ref:
+            continue
+        container = _get_container_by_ref(container_ref)
+        if container is None or container.id in seen_ids:
+            continue
+        matched.append(container)
+        seen_ids.add(container.id)
 
     client = _docker_client()
     if client is None:
-        return None
+        if not matched:
+            return None
+        return sorted(matched, key=lambda item: (item.status == "running", item.attrs.get("Created", "")))[-1]
 
     try:
         containers = client.containers.list(all=True)
     except DockerException:
-        return None
+        if not matched:
+            return None
+        return sorted(matched, key=lambda item: (item.status == "running", item.attrs.get("Created", "")))[-1]
 
-    matched: list[Any] = []
     for container in containers:
         name = container.name
         if name_prefixes and any(name.startswith(prefix) for prefix in name_prefixes):
-            matched.append(container)
+            if container.id not in seen_ids:
+                matched.append(container)
+                seen_ids.add(container.id)
             continue
         if command_markers:
             command = _container_command(container)
             if any(marker in command for marker in command_markers):
-                matched.append(container)
+                if container.id not in seen_ids:
+                    matched.append(container)
+                    seen_ids.add(container.id)
     if not matched:
         return None
-    return sorted(matched, key=lambda item: item.attrs.get("Created", ""))[-1]
+    return sorted(matched, key=lambda item: (item.status == "running", item.attrs.get("Created", "")))[-1]
 
 
 def _snapshot_container(container: Any | None) -> dict[str, Any]:
@@ -257,6 +293,26 @@ def _snapshot_container(container: Any | None) -> dict[str, Any]:
         "oom_killed": bool(state.get("OOMKilled")),
         "is_running": container.status == "running",
     }
+
+
+def _step_pid_file_names(spec: StepControlSpec) -> list[str]:
+    return [spec.pid_file_name, *spec.legacy_pid_file_names]
+
+
+def _step_pid_files(spec: StepControlSpec) -> list[Path]:
+    return [_pid_file(name) for name in _step_pid_file_names(spec)]
+
+
+def _step_logger_pid_files(spec: StepControlSpec) -> list[Path]:
+    return [_pid_file(name.replace(".pid", "_logger.pid")) for name in _step_pid_file_names(spec)]
+
+
+def _step_log_patterns(spec: StepControlSpec) -> list[str]:
+    return [f"{prefix}_*.log" for prefix in [spec.log_prefix, *spec.legacy_log_prefixes]]
+
+
+def _step_container_prefixes(spec: StepControlSpec) -> list[str]:
+    return [spec.container_prefix, *spec.legacy_container_prefixes]
 
 
 def _tail_container_logs(container_name: str, *, lines: int) -> list[str]:
@@ -307,8 +363,8 @@ def _ensure_image(image: str) -> None:
 
 def _step_container(spec: StepControlSpec) -> Any | None:
     return _find_latest_matching_container(
-        pid_file=_pid_file(spec.pid_file_name),
-        name_prefixes=[spec.container_prefix],
+        pid_files=_step_pid_files(spec),
+        name_prefixes=_step_container_prefixes(spec),
         command_markers=list(spec.command_markers),
     )
 
@@ -322,13 +378,22 @@ def _container_name(prefix: str) -> str:
     return f"{prefix}{_timestamp()}"
 
 
-def _stop_logger_pid(path: Path) -> None:
+def _stop_logger_pid(path: Path, *, container_prefixes: list[str] | None = None) -> None:
     if not path.exists():
         return
     pid_value = path.read_text(encoding="utf-8").strip()
     if not pid_value:
         path.unlink(missing_ok=True)
         return
+    ok, output = run_command(["ps", "-p", pid_value, "-o", "command="], timeout=5)
+    command = output.strip() if ok else ""
+    if command:
+        if "docker logs" not in command:
+            path.unlink(missing_ok=True)
+            return
+        if container_prefixes and not any(prefix in command for prefix in container_prefixes):
+            path.unlink(missing_ok=True)
+            return
     ok, _ = run_command(["kill", "-TERM", pid_value], timeout=5)
     path.unlink(missing_ok=True)
     if ok:
@@ -453,9 +518,10 @@ def stop_step(step_key: str) -> dict[str, Any]:
     except DockerException as exc:
         raise BatchControlError("stop_failed", f"Failed to stop {spec.label}: {exc}", status_code=500) from exc
 
-    _stop_logger_pid(_pid_file(spec.pid_file_name.replace(".pid", "_logger.pid")))
+    for logger_pid_file in _step_logger_pid_files(spec):
+        _stop_logger_pid(logger_pid_file, container_prefixes=_step_container_prefixes(spec))
 
-    latest_log_file = _latest_matching_log_file(get_settings().logs_dir, f"{spec.log_prefix}_*.log")
+    latest_log_file = _latest_matching_log_file(get_settings().logs_dir, _step_log_patterns(spec))
     if latest_log_file is not None:
         with latest_log_file.open("a", encoding="utf-8") as handle:
             handle.write(f"Stopped from control panel at {_now_iso()}\n")
@@ -474,7 +540,7 @@ def stop_step(step_key: str) -> dict[str, Any]:
 
 def _full_pipeline_container() -> Any | None:
     return _find_latest_matching_container(
-        pid_file=_pid_file(FULL_PIPELINE_PID_FILE),
+        pid_files=[_pid_file(FULL_PIPELINE_PID_FILE)],
         name_prefixes=[FULL_PIPELINE_CONTAINER_PREFIX],
         command_markers=["app.services.pipeline_runner"],
     )

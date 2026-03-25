@@ -45,6 +45,10 @@ def _get_container_info(container_ref: str | None) -> dict[str, Any]:
             "container_name": None,
             "status": None,
             "running_for": None,
+            "started_at": None,
+            "finished_at": None,
+            "exit_code": None,
+            "oom_killed": False,
             "is_running": False,
         }
 
@@ -53,17 +57,53 @@ def _get_container_info(container_ref: str | None) -> dict[str, Any]:
         try:
             container = client.containers.get(container_ref)
             state = container.attrs.get("State", {})
+            finished_at = state.get("FinishedAt")
             return {
                 "container_id": container.id,
                 "container_name": container.name,
                 "status": container.status,
                 "running_for": state.get("StartedAt"),
+                "started_at": state.get("StartedAt"),
+                "finished_at": None if finished_at == "0001-01-01T00:00:00Z" else finished_at,
+                "exit_code": state.get("ExitCode"),
+                "oom_killed": bool(state.get("OOMKilled")),
                 "is_running": container.status == "running",
             }
         except NotFound:
             pass
         except DockerException:
             pass
+
+    ok, output = run_command(
+        [
+            "docker",
+            "inspect",
+            container_ref,
+            "--format",
+            "{{.Id}}\t{{.Name}}\t{{.State.Status}}\t{{.State.StartedAt}}\t{{.State.FinishedAt}}\t{{.State.ExitCode}}\t{{.State.OOMKilled}}",
+        ]
+    )
+    if ok and output:
+        parts = output.strip().split("\t")
+        if len(parts) == 7:
+            container_id, container_name, status, started_at, finished_at, exit_code, oom_killed = parts
+            normalized_name = container_name.lstrip("/")
+            normalized_finished_at = None if finished_at == "0001-01-01T00:00:00Z" else finished_at
+            try:
+                normalized_exit_code = int(exit_code)
+            except ValueError:
+                normalized_exit_code = None
+            return {
+                "container_id": container_id,
+                "container_name": normalized_name or None,
+                "status": status or None,
+                "running_for": started_at or None,
+                "started_at": started_at or None,
+                "finished_at": normalized_finished_at,
+                "exit_code": normalized_exit_code,
+                "oom_killed": oom_killed.strip().lower() == "true",
+                "is_running": status == "running",
+            }
 
     ok, output = run_command(
         [
@@ -80,6 +120,10 @@ def _get_container_info(container_ref: str | None) -> dict[str, Any]:
             "container_name": None,
             "status": None,
             "running_for": None,
+            "started_at": None,
+            "finished_at": None,
+            "exit_code": None,
+            "oom_killed": False,
             "is_running": False,
         }
 
@@ -94,6 +138,10 @@ def _get_container_info(container_ref: str | None) -> dict[str, Any]:
                 "container_name": container_name,
                 "status": status,
                 "running_for": running_for,
+                "started_at": None,
+                "finished_at": None,
+                "exit_code": None,
+                "oom_killed": False,
                 "is_running": status.lower().startswith("up"),
             }
     return {
@@ -101,6 +149,10 @@ def _get_container_info(container_ref: str | None) -> dict[str, Any]:
         "container_name": None,
         "status": None,
         "running_for": None,
+        "started_at": None,
+        "finished_at": None,
+        "exit_code": None,
+        "oom_killed": False,
         "is_running": False,
     }
 
@@ -356,6 +408,10 @@ def get_batch_status() -> dict[str, Any]:
         "container_name": container["container_name"],
         "container_status": container["status"],
         "container_running_for": container["running_for"],
+        "container_started_at": container["started_at"],
+        "container_finished_at": container["finished_at"],
+        "container_exit_code": container["exit_code"],
+        "oom_killed": container["oom_killed"],
         "state_file": str(settings.state_file),
         "created_at": state.get("created_at"),
         "updated_at": state.get("updated_at"),

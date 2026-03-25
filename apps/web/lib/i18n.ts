@@ -151,6 +151,11 @@ type Messages = {
     subtitle: string;
     rows: string;
     latestDate: string;
+    signalDate: string;
+    sourceCloseDate: string;
+    rawSyncDate: string;
+    featureTime: string;
+    modelTime: string;
     displayedPicks: string;
     rowsHint: string;
     latestSnapshot: string;
@@ -193,7 +198,7 @@ const messages: Messages = {
     password: "Password",
     submit: "Enter Dashboard",
     error: "Invalid username or password.",
-    accountHint: "Guest access is available with username guest and password guest."
+    accountHint: "Replace the sample users and password hashes before exposing the panel to anyone else."
   },
   shell: {
     signedInAs: "Signed in as",
@@ -334,6 +339,11 @@ const messages: Messages = {
     subtitle: "Inspect the most recent inference scores and surface the highest-ranked names without opening parquet files manually.",
     rows: "Rows",
     latestDate: "Latest Date",
+    signalDate: "Signal Date",
+    sourceCloseDate: "Source Close Date",
+    rawSyncDate: "Raw Sync Date",
+    featureTime: "Feature Time",
+    modelTime: "Model Time",
     displayedPicks: "Displayed Picks",
     rowsHint: "Rows in inference_scores_latest.parquet",
     latestSnapshot: "Most recent scored snapshot",

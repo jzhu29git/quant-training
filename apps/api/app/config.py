@@ -25,6 +25,7 @@ class Settings:
     paper_trading_history_path: Path
     panel_admin_key: str | None
     panel_api_allowed_cidrs: tuple[str, ...]
+    panel_api_allowed_service_names: tuple[str, ...]
     futu_gateway_base_url: str
     futu_gateway_market: str
     futu_gateway_agent_id: str
@@ -133,7 +134,11 @@ def get_settings() -> Settings:
         panel_admin_key=os.getenv("PANEL_ADMIN_KEY"),
         panel_api_allowed_cidrs=_csv_env(
             "PANEL_API_ALLOWED_CIDRS",
-            ("127.0.0.1/32", "::1/128", "172.28.0.0/16"),
+            ("127.0.0.1/32", "::1/128"),
+        ),
+        panel_api_allowed_service_names=_csv_env(
+            "PANEL_API_ALLOWED_SERVICE_NAMES",
+            ("panel-web",),
         ),
         futu_gateway_base_url=os.getenv("FUTU_GATEWAY_BASE_URL", "http://127.0.0.1:8080").strip() or "http://127.0.0.1:8080",
         futu_gateway_market=(os.getenv("FUTU_GATEWAY_MARKET", "CN").strip() or "CN").upper(),

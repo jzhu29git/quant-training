@@ -39,7 +39,8 @@ The API and dashboard sit on top of those artifacts and runtime logs rather than
 ## Deployment Model
 
 - Docker Compose is the primary local and server deployment entry point.
-- The panel API mounts the project workspace and Docker socket to inspect and control long-running containers.
+- The panel API serves both inspection and workflow-control routes.
+- API client IP checks should stay narrow: localhost plus explicitly trusted local services only.
 - The web app reads the panel auth config from mounted runtime files.
 
 ## Security Model
@@ -56,4 +57,3 @@ The API and dashboard sit on top of those artifacts and runtime logs rather than
 - inspectable logs and state files
 - low-friction local deployment
 - explicit workflow visibility for operators
-

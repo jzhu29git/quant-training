@@ -2,9 +2,9 @@ FROM node:20-bookworm-slim
 
 WORKDIR /app
 
-COPY apps/web/package.json ./
+COPY apps/web/package.json apps/web/package-lock.json ./
 
-RUN npm install
+RUN npm ci
 
 COPY apps/web ./
 

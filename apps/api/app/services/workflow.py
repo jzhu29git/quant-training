@@ -25,8 +25,12 @@ def _parse_iso(ts: str | None) -> datetime | None:
         return None
 
 
-def _latest_matching_log_file(logs_dir: Path, pattern: str) -> Path | None:
-    candidates = sorted(logs_dir.glob(pattern), key=lambda path: path.stat().st_mtime)
+def _latest_matching_log_file(logs_dir: Path, patterns: str | list[str]) -> Path | None:
+    pattern_list = [patterns] if isinstance(patterns, str) else patterns
+    candidates: list[Path] = []
+    for pattern in pattern_list:
+        candidates.extend(logs_dir.glob(pattern))
+    candidates = sorted(candidates, key=lambda path: path.stat().st_mtime)
     return candidates[-1] if candidates else None
 
 
@@ -91,18 +95,33 @@ def _container_from_pid_file(pid_path: Path) -> Any | None:
 
 def _find_latest_matching_container(
     *,
+    pid_files: list[Path] | None = None,
     name_prefixes: list[str] | None = None,
     exact_names: list[str] | None = None,
     command_markers: list[str] | None = None,
 ) -> Any | None:
+    matched: list[Any] = []
+    seen_ids: set[str] = set()
+
+    for pid_file in pid_files or []:
+        container = _container_from_pid_file(pid_file)
+        if container is None or container.id in seen_ids:
+            continue
+        matched.append(container)
+        seen_ids.add(container.id)
+
     client = _docker_client()
     if client is None:
-        return None
+        if not matched:
+            return None
+        return sorted(matched, key=lambda item: (item.status == "running", item.attrs.get("Created", "")))[-1]
 
     try:
         containers = client.containers.list(all=True)
     except DockerException:
-        return None
+        if not matched:
+            return None
+        return sorted(matched, key=lambda item: (item.status == "running", item.attrs.get("Created", "")))[-1]
 
     def matches(container: Any) -> bool:
         name = container.name
@@ -116,24 +135,25 @@ def _find_latest_matching_container(
                 return True
         return False
 
-    matched = [container for container in containers if matches(container)]
+    for container in containers:
+        if not matches(container) or container.id in seen_ids:
+            continue
+        matched.append(container)
+        seen_ids.add(container.id)
     if not matched:
         return None
-    return sorted(matched, key=lambda item: item.attrs.get("Created", ""))[-1]
+    return sorted(matched, key=lambda item: (item.status == "running", item.attrs.get("Created", "")))[-1]
 
 
 def _resolve_container(
     *,
-    pid_file: Path | None = None,
+    pid_files: list[Path] | None = None,
     name_prefixes: list[str] | None = None,
     exact_names: list[str] | None = None,
     command_markers: list[str] | None = None,
 ) -> Any | None:
-    if pid_file is not None:
-        container = _container_from_pid_file(pid_file)
-        if container is not None:
-            return container
     return _find_latest_matching_container(
+        pid_files=pid_files,
         name_prefixes=name_prefixes,
         exact_names=exact_names,
         command_markers=command_markers,
@@ -234,8 +254,8 @@ def _build_runtime_step(
     key: str,
     runner_script: str | None,
     command_hint: str | None,
-    pid_file_name: str | None,
-    log_pattern: str | None,
+    pid_file_names: list[str] | None,
+    log_patterns: list[str] | None,
     name_prefixes: list[str] | None,
     exact_names: list[str] | None,
     command_markers: list[str] | None,
@@ -243,15 +263,15 @@ def _build_runtime_step(
     details: list[dict[str, str]],
 ) -> dict[str, Any]:
     settings = get_settings()
-    pid_file = settings.run_dir / pid_file_name if pid_file_name else None
+    pid_files = [settings.run_dir / pid_file_name for pid_file_name in (pid_file_names or [])]
     container = _resolve_container(
-        pid_file=pid_file,
+        pid_files=pid_files,
         name_prefixes=name_prefixes,
         exact_names=exact_names,
         command_markers=command_markers,
     )
     container_info = _snapshot_container(container)
-    latest_log_file = _latest_matching_log_file(settings.logs_dir, log_pattern) if log_pattern else None
+    latest_log_file = _latest_matching_log_file(settings.logs_dir, log_patterns) if log_patterns else None
     artifact = _path_snapshot(artifact_path)
     log_payload = _resolve_log_payload(
         container_info=container_info,
@@ -317,6 +337,7 @@ def _build_data_prepare_step_runtime(
         _detail("Valuation files", data_summary.get("valuation_file_count")),
         _detail("Paired files", data_summary.get("paired_file_count")),
         _detail("Failure reasons", top_failure_summary),
+        _detail("Batch state created", batch_status.get("created_at")),
         _detail("State updated", batch_status.get("updated_at")),
     ]
 
@@ -330,10 +351,10 @@ def _build_data_prepare_step_runtime(
         "command_hint": "bash run_full_market_3y_batch.sh",
         "container_name": batch_status.get("container_name"),
         "container_status": batch_status.get("container_status"),
-        "container_started_at": batch_status.get("created_at"),
-        "container_finished_at": None,
-        "container_exit_code": None,
-        "oom_killed": False,
+        "container_started_at": batch_status.get("container_started_at") or batch_status.get("created_at"),
+        "container_finished_at": batch_status.get("container_finished_at"),
+        "container_exit_code": batch_status.get("container_exit_code"),
+        "oom_killed": bool(batch_status.get("oom_killed")),
         "latest_log_source": batch_logs.get("source"),
         "latest_log_file": batch_status.get("latest_log_file"),
         "latest_log_updated_at": batch_status.get("latest_log_updated_at"),
@@ -475,16 +496,16 @@ def get_workflow_status() -> dict[str, Any]:
         _build_runtime_step(
             step=2,
             key="training_features",
-            runner_script="bash run_step3_feature_engineering.sh",
+            runner_script="bash run_step2_feature_engineering.sh",
             command_hint="python feature_engineering.py --data-dir quant_data --output quant_data/ml_features_ready.parquet",
-            pid_file_name="step3_feature_engineering.pid",
-            log_pattern="step3_feature_engineering_*.log",
-            name_prefixes=["aistockcn-step3-feature-engineering-"],
+            pid_file_names=["step2_feature_engineering.pid", "step3_feature_engineering.pid"],
+            log_patterns=["step2_feature_engineering_*.log", "step3_feature_engineering_*.log"],
+            name_prefixes=["aistockcn-step2-feature-engineering-", "aistockcn-step3-feature-engineering-"],
             exact_names=None,
             command_markers=["feature_engineering.py"],
             artifact_path=settings.quant_dir / "ml_features_ready.parquet",
             details=[
-                _detail("Runner", "bash run_step3_feature_engineering.sh"),
+                _detail("Runner", "bash run_step2_feature_engineering.sh"),
                 _detail("Rows", training_snapshot.get("rows")),
                 _detail("Codes", training_snapshot.get("code_count")),
                 _detail("Date range", f"{training_snapshot.get('date_min') or '—'} to {training_snapshot.get('date_max') or '—'}"),
@@ -494,16 +515,16 @@ def get_workflow_status() -> dict[str, Any]:
         _build_runtime_step(
             step=3,
             key="inference_features",
-            runner_script="bash run_step4_inference_features.sh",
+            runner_script="bash run_step3_inference_features.sh",
             command_hint="python build_inference_features.py --data-dir quant_data --output quant_data/inference_features_latest.parquet",
-            pid_file_name="step4_inference_features.pid",
-            log_pattern="step4_inference_features_*.log",
-            name_prefixes=["aistockcn-step4-inference-features-"],
+            pid_file_names=["step3_inference_features.pid", "step4_inference_features.pid"],
+            log_patterns=["step3_inference_features_*.log", "step4_inference_features_*.log"],
+            name_prefixes=["aistockcn-step3-inference-features-", "aistockcn-step4-inference-features-"],
             exact_names=None,
             command_markers=["build_inference_features.py"],
             artifact_path=settings.quant_dir / "inference_features_latest.parquet",
             details=[
-                _detail("Runner", "bash run_step4_inference_features.sh"),
+                _detail("Runner", "bash run_step3_inference_features.sh"),
                 _detail("Rows", inference_snapshot.get("rows")),
                 _detail("Codes", inference_snapshot.get("code_count")),
                 _detail("Latest date", inference_snapshot.get("date_max")),
@@ -513,16 +534,16 @@ def get_workflow_status() -> dict[str, Any]:
         _build_runtime_step(
             step=4,
             key="train_and_score",
-            runner_script="bash run_step5_train_score.sh",
+            runner_script="bash run_step4_train_score.sh",
             command_hint="python train_lightgbm.py --train-path quant_data/ml_features_ready.parquet --inference-path quant_data/inference_features_latest.parquet --model-dir quant_data/models",
-            pid_file_name="step5_train_score.pid",
-            log_pattern="step5_train_score_*.log",
-            name_prefixes=["aistockcn-step5-train-score-"],
+            pid_file_names=["step4_train_score.pid", "step5_train_score.pid"],
+            log_patterns=["step4_train_score_*.log", "step5_train_score_*.log"],
+            name_prefixes=["aistockcn-step4-train-score-", "aistockcn-step5-train-score-"],
             exact_names=None,
             command_markers=["train_lightgbm.py"],
             artifact_path=settings.models_dir / "inference_scores_latest.parquet",
             details=[
-                _detail("Runner", "bash run_step5_train_score.sh"),
+                _detail("Runner", "bash run_step4_train_score.sh"),
                 _detail("Valid AUC", training_metrics.get("auc")),
                 _detail("Train rows", training_metadata.get("train_rows")),
                 _detail("Valid rows", training_metadata.get("valid_rows")),
@@ -533,16 +554,16 @@ def get_workflow_status() -> dict[str, Any]:
         _build_runtime_step(
             step=5,
             key="backtest",
-            runner_script="bash run_step6_backtest.sh",
+            runner_script="bash run_step5_backtest.sh",
             command_hint="python backtest_profile_runner.py --profile short_5d --sync-latest",
-            pid_file_name="step6_backtest.pid",
-            log_pattern="step6_backtest_*.log",
-            name_prefixes=["aistockcn-step6-backtest-"],
+            pid_file_names=["step5_backtest.pid", "step6_backtest.pid"],
+            log_patterns=["step5_backtest_*.log", "step6_backtest_*.log"],
+            name_prefixes=["aistockcn-step5-backtest-", "aistockcn-step6-backtest-"],
             exact_names=None,
             command_markers=["backtest_profile_runner.py", "backtest_walk_forward.py"],
             artifact_path=settings.backtests_dir / "summary.json",
             details=[
-                _detail("Runner", "bash run_step6_backtest.sh"),
+                _detail("Runner", "bash run_step5_backtest.sh"),
                 _detail("Profile", backtest_summary.get("profile_label") or backtest_summary.get("profile_name")),
                 _detail("Rebalances", backtest_summary.get("num_rebalances")),
                 _detail("Codes", backtest_summary.get("num_codes")),
