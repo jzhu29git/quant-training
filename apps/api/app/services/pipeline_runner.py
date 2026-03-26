@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
-from app.services.batch import BatchControlError, _get_container_by_ref
+from app.services.batch import BatchControlError, _get_container_by_ref, get_batch_status
 from app.services.pipeline_control import (
     FULL_PIPELINE_STATE_FILE,
     PIPELINE_STEP_KEY_SCHEMA_VERSION,
@@ -74,6 +74,13 @@ def _wait_for_container_exit(container_ref: str, label: str) -> None:
                 raise RuntimeError(f"{label} exited with code {exit_code}.")
             _log(f"{label} completed in container {container.name}.")
             return
+
+        if CURRENT_STEP_KEY == "step1":
+            batch_status = get_batch_status()
+            if batch_status.get("is_stalled"):
+                last_activity_at = batch_status.get("last_activity_at") or batch_status.get("updated_at") or "unknown"
+                last_code = batch_status.get("last_code") or "—"
+                raise RuntimeError(f"{label} stalled with no progress since {last_activity_at} (last code {last_code}).")
 
         _log(f"{label} still running in {container.name}.")
         time.sleep(poll_seconds)

@@ -12,7 +12,7 @@ function statusPillClass(status: string) {
   if (status === "running" || status === "completed") {
     return "live";
   }
-  if (status === "failed" || status === "stopped") {
+  if (status === "failed" || status === "stalled" || status === "stopped") {
     return "warn";
   }
   return "";
@@ -29,6 +29,42 @@ function stepArtifact(runtime?: WorkflowRuntimeStep | null) {
     return runtime.latest_log_file;
   }
   return "—";
+}
+
+function visibleStepDetails(stepKey: string, details: WorkflowRuntimeStep["details"]) {
+  if (stepKey !== "step1") {
+    return details;
+  }
+
+  const hiddenLabels = new Set([
+    "Container status",
+    "Progress",
+    "Done / total",
+    "Batch state created",
+    "State updated",
+    "Failed count",
+    "Current pass",
+    "Last code",
+    "Active stocks",
+    "Registry rows",
+    "Kline files",
+    "Valuation files",
+    "Paired files",
+    "Reference status",
+    "Reference updated",
+    "Reference ready",
+    "Reference missing",
+    "Reference stale",
+    "Industry missing",
+    "Reference batch state",
+    "Reference batch updated",
+    "Reference batch last code",
+    "Failure reasons",
+    "Last activity",
+    "Stalled"
+  ]);
+
+  return details.filter((detail) => !hiddenLabels.has(detail.label));
 }
 
 function flashMessage(
@@ -158,8 +194,8 @@ export default async function BatchPage({
       key: "step1",
       title: stepLabels.step1,
       description: isZh
-        ? "股票池同步、industry metadata 與 raw download 會合併在同一個 data-prepare batch 中執行。"
-        : "Universe sync, industry metadata, and raw download run together in one data-prepare batch.",
+        ? "股票池同步與 raw download 仍在同一個 data-prepare batch 中執行；慢變 reference data 改成獨立手動批次。"
+        : "Universe sync and raw download still run together in one data-prepare batch; slow reference data now lives in a separate manual batch.",
       runtime: runtimeByStep.get(1),
       canStart: !batchStatus.is_running && !pipeline.is_running,
       canStop: batchStatus.is_running,
@@ -253,12 +289,60 @@ export default async function BatchPage({
                 ? "這個控制項只跑每日需要的 Step 1、2、3、4。Backtest 已經獨立拆出去，不再卡在 nightly 流程裡。"
                 : "This control now runs only the daily trading steps: 1, 2, 3, and 4. Backtest is separate and no longer blocks the nightly flow."}
             </p>
+            <div className="inline-pill-row">
+              <span className="pill pill-wrap pill-primary">
+                <span className="pill-label">{isZh ? "Current step" : "Current step"}:</span>
+                <span className="pill-value">{pipeline.current_step_label ?? "—"}</span>
+              </span>
+              <span className="pill pill-wrap">
+                <span className="pill-label">{isZh ? "Step 1" : "Step 1"}:</span>
+                <span className="pill-value">{`${formatNumber(batchStatus.done_count, user.locale)}/${formatNumber(batchStatus.total_codes, user.locale)}`}</span>
+              </span>
+              <span className="pill pill-wrap">
+                <span className="pill-label">{isZh ? "Last code" : "Last code"}:</span>
+                <span className="pill-value">{batchStatus.last_code ?? "—"}</span>
+              </span>
+              <span className="pill pill-wrap">
+                <span className="pill-label">{isZh ? "Progress %" : "Progress %"}:</span>
+                <span className="pill-value">
+                  {typeof batchStatus.progress_pct === "number"
+                    ? `${formatNumber(batchStatus.progress_pct, user.locale, { maximumFractionDigits: 1 })}%`
+                    : "—"}
+                </span>
+              </span>
+            </div>
             <div className="status-meta">
               <span className="meta-item"><span className="meta-label">{isZh ? "目前步驟" : "Current step"}:</span> <span className="meta-value">{pipeline.current_step_label ?? "—"}</span></span>
               <span className="meta-item"><span className="meta-label">{isZh ? "已完成" : "Completed"}:</span> <span className="meta-value">{completedStepsLabel || "—"}</span></span>
               <span className="meta-item"><span className="meta-label">{isZh ? "容器" : "Container"}:</span> <span className="meta-value">{pipeline.container_name ?? "—"}</span></span>
               <span className="meta-item"><span className="meta-label">{isZh ? "狀態更新" : "Updated"}:</span> <span className="meta-value">{formatDateTime(pipeline.updated_at, user.locale)}</span></span>
               <span className="meta-item"><span className="meta-label">{isZh ? "日誌來源" : "Log source"}:</span> <span className="meta-value">{pipeline.log_source ?? "—"}</span></span>
+            </div>
+            <div className="detail-list">
+              <div className="detail-row">
+                <span className="detail-label">{isZh ? "Running steps" : "Running steps"}</span>
+                <strong className="detail-value">{formatNumber(runningSteps, user.locale)}</strong>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">{isZh ? "Completed path" : "Completed path"}</span>
+                <strong className="detail-value">{completedStepsLabel || "—"}</strong>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">{isZh ? "Batch updated" : "Batch updated"}</span>
+                <strong className="detail-value">{formatDateTime(batchStatus.updated_at, user.locale)}</strong>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">{isZh ? "Progress %" : "Progress %"}</span>
+                <strong className="detail-value">
+                  {typeof batchStatus.progress_pct === "number"
+                    ? `${formatNumber(batchStatus.progress_pct, user.locale, { maximumFractionDigits: 1 })}%`
+                    : "—"}
+                </strong>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">{isZh ? "Latest code" : "Latest code"}</span>
+                <strong className="detail-value">{batchStatus.last_code ?? "—"}</strong>
+              </div>
             </div>
             {pipeline.error_message ? (
               <p className="panel-copy status-warn">{isZh ? `錯誤: ${pipeline.error_message}` : `Error: ${pipeline.error_message}`}</p>
@@ -301,15 +385,56 @@ export default async function BatchPage({
                   <span className="pill-label">{isZh ? "Log" : "Log"}:</span>
                   <span className="pill-value">{card.runtime?.latest_log_source ?? "—"}</span>
                 </span>
+                {card.key === "step1" ? (
+                  <span className="pill pill-wrap">
+                    <span className="pill-label">{isZh ? "Progress %" : "Progress %"}:</span>
+                    <span className="pill-value">
+                      {typeof batchStatus.progress_pct === "number"
+                        ? `${formatNumber(batchStatus.progress_pct, user.locale, { maximumFractionDigits: 1 })}%`
+                        : "—"}
+                    </span>
+                  </span>
+                ) : null}
               </div>
               <div className="status-meta">
                 <span className="meta-item"><span className="meta-label">{isZh ? "容器" : "Container"}:</span> <span className="meta-value">{card.runtime?.container_name ?? "—"}</span></span>
-                <span className="meta-item"><span className="meta-label">{isZh ? "容器狀態" : "Container status"}:</span> <span className="meta-value">{card.runtime?.container_status ?? "—"}</span></span>
+                {card.key !== "step1" ? (
+                  <span className="meta-item"><span className="meta-label">{isZh ? "容器狀態" : "Container status"}:</span> <span className="meta-value">{card.runtime?.container_status ?? "—"}</span></span>
+                ) : null}
                 <span className="meta-item"><span className="meta-label">{isZh ? "開始時間" : "Started"}:</span> <span className="meta-value">{formatDateTime(card.runtime?.container_started_at, user.locale)}</span></span>
                 <span className="meta-item"><span className="meta-label">{isZh ? "完成時間" : "Finished"}:</span> <span className="meta-value">{formatDateTime(card.runtime?.container_finished_at, user.locale)}</span></span>
               </div>
+              {card.key === "step1" ? (
+                <div className="detail-list">
+                  <div className="detail-row">
+                    <span className="detail-label">{isZh ? "Progress" : "Progress"}</span>
+                    <strong className="detail-value">{`${formatNumber(batchStatus.done_count, user.locale)}/${formatNumber(batchStatus.total_codes, user.locale)}`}</strong>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">{isZh ? "Updated" : "Updated"}</span>
+                    <strong className="detail-value">{formatDateTime(batchStatus.updated_at, user.locale)}</strong>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">{isZh ? "Progress %" : "Progress %"}</span>
+                    <strong className="detail-value">
+                      {typeof batchStatus.progress_pct === "number"
+                        ? `${formatNumber(batchStatus.progress_pct, user.locale, { maximumFractionDigits: 1 })}%`
+                        : "—"}
+                    </strong>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">{isZh ? "Warnings" : "Warnings"}</span>
+                    <strong className="detail-value">{formatNumber((card.runtime?.warnings ?? []).length, user.locale)}</strong>
+                  </div>
+                </div>
+              ) : null}
+              {(card.runtime?.warnings ?? []).map((warning) => (
+                <p key={`${card.key}-warning-${warning}`} className="panel-copy status-warn">
+                  {warning}
+                </p>
+              ))}
               <div className="detail-list">
-                {(card.runtime?.details ?? []).map((detail) => (
+                {visibleStepDetails(card.key, card.runtime?.details ?? []).map((detail) => (
                   <div key={`${card.key}-${detail.label}`} className="detail-row">
                     <span className="detail-label">{detail.label}</span>
                     <strong className="detail-value">{formatDisplayValue(detail.value, { locale: user.locale, key: detail.label })}</strong>

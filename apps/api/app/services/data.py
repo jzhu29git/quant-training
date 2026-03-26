@@ -9,6 +9,7 @@ import pyarrow.parquet as pq
 
 from app.config import get_settings
 from app.serializers import records_to_json, to_jsonable
+from app.services.files import read_json
 
 
 def _code_path(directory: Path, code: str) -> Path:
@@ -116,6 +117,33 @@ def get_data_summary() -> dict[str, Any]:
             "latest_date": to_jsonable(pd.to_datetime(inference_df["date"], errors="coerce").max()),
         }
 
+    reference_snapshot = None
+    reference_status = read_json(settings.reference_status_path)
+    reference_batch_state = read_json(settings.reference_batch_state_path)
+    if reference_status or settings.reference_status_path.exists() or reference_batch_state:
+        status_updated_at = reference_status.get("generated_at")
+        if not status_updated_at and settings.reference_status_path.exists():
+            status_updated_at = pd.Timestamp(settings.reference_status_path.stat().st_mtime, unit="s", tz="UTC").isoformat()
+
+        reference_snapshot = {
+            "path": _relative_path(settings.reference_status_path, settings.project_root),
+            "updated_at": status_updated_at,
+            "target_trade_date": reference_status.get("target_trade_date"),
+            "has_warnings": bool(reference_status.get("has_warnings")),
+            "industry_known_count": int(reference_status.get("industry_known_count") or 0),
+            "industry_missing_count": int(reference_status.get("industry_missing_count") or 0),
+            "valuation_reference_ready_count": int(reference_status.get("valuation_reference_ready_count") or 0),
+            "valuation_reference_missing_count": int(reference_status.get("valuation_reference_missing_count") or 0),
+            "valuation_reference_stale_count": int(reference_status.get("valuation_reference_stale_count") or 0),
+            "missing_industry_codes": list(reference_status.get("missing_industry_codes") or []),
+            "missing_reference_codes": list(reference_status.get("missing_reference_codes") or []),
+            "stale_reference_codes": list(reference_status.get("stale_reference_codes") or []),
+            "batch_state_path": _relative_path(settings.reference_batch_state_path, settings.project_root),
+            "batch_updated_at": reference_batch_state.get("updated_at"),
+            "batch_last_code": reference_batch_state.get("last_code"),
+            "batch_failed_count": int(len(reference_batch_state.get("failed_codes") or {})),
+        }
+
     return {
         "stock_count": int(len(stock_df)),
         "active_stock_count": int(len(stock_df)),
@@ -127,6 +155,7 @@ def get_data_summary() -> dict[str, Any]:
         "total_size_mb": round(total_size_bytes / (1024 * 1024), 2),
         "sample_codes": stock_df["code"].astype(str).str.zfill(6).head(12).tolist() if not stock_df.empty else [],
         "latest_inference_snapshot": inference_snapshot,
+        "reference_snapshot": reference_snapshot,
     }
 
 

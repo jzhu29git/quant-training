@@ -26,8 +26,8 @@ const workflowSteps: WorkflowStep[] = [
   {
     step: 1,
     title: "Data Prepare",
-    summary: "Refresh the A-share universe, maintain the canonical registry, and write raw kline plus valuation parquet artifacts.",
-    inputs: ["BaoStock", "AKShare", "existing registry artifacts"],
+    summary: "Refresh the A-share universe, maintain the canonical registry, and write raw kline plus valuation parquet artifacts using the local slow-reference cache.",
+    inputs: ["BaoStock", "local reference cache", "existing registry artifacts"],
     outputs: ["stock_registry.parquet", "stock_list.parquet", "daily_kline/*", "daily_valuation/*"],
     anchor: "batch_download_all_a.py / download_data.py"
   },

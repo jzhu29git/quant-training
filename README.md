@@ -77,10 +77,39 @@ docker compose build
 
 ### Start the panel
 
+For local development, the default `docker-compose.override.yml` bind-mounts
+`apps/api` and `apps/web`, runs FastAPI with `--reload`, and runs Next.js with
+`next dev`. In that mode, normal source edits usually only need a browser
+refresh instead of a rebuild.
+
 ```bash
 cp run/panel.env.example run/panel.env
 cp run/panel_users.example.json run/panel_users.json
 docker compose up -d panel-api panel-web
+```
+
+If you change Python dependencies, rebuild and restart the API container:
+
+```bash
+docker compose build panel-api
+docker compose up -d panel-api
+```
+
+If you change `apps/web/package.json` or `apps/web/package-lock.json`, rebuild the
+web image and refresh the mounted `node_modules` volume once:
+
+```bash
+docker compose build panel-web
+docker compose rm -sf panel-web
+docker volume rm aistockcn_panel-web-node-modules
+docker compose up -d panel-web
+```
+
+If you want the original production-like panel containers without source mounts,
+run Compose without the override file:
+
+```bash
+docker compose -f docker-compose.yml up -d panel-api panel-web
 ```
 
 Before first start, replace the example auth secrets and password hashes in those local copies.

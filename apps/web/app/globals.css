@@ -100,6 +100,19 @@ input {
   color: var(--muted);
 }
 
+.shell-time {
+  white-space: nowrap;
+}
+
+.shell-time-label {
+  color: var(--muted);
+}
+
+.shell-time-value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 .hero-landing {
   position: relative;
   padding-top: 0;

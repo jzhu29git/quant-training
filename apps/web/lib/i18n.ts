@@ -14,6 +14,7 @@ type Messages = {
   };
   shell: {
     signedInAs: string;
+    shanghaiTime: string;
     logout: string;
     admin: string;
     viewer: string;
@@ -202,6 +203,7 @@ const messages: Messages = {
   },
   shell: {
     signedInAs: "Signed in as",
+    shanghaiTime: "Shanghai Time",
     logout: "Logout",
     admin: "Admin",
     viewer: "Viewer",

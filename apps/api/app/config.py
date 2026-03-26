@@ -17,6 +17,10 @@ class Settings:
     stock_list_path: Path
     stock_registry_path: Path
     stock_list_subset_path: Path
+    reference_dir: Path
+    reference_valuation_dir: Path
+    reference_status_path: Path
+    reference_batch_state_path: Path
     models_dir: Path
     backtests_dir: Path
     paper_trading_dir: Path
@@ -115,6 +119,7 @@ def get_settings() -> Settings:
     host_project_root = Path(host_project_root_env).resolve() if host_project_root_env else project_root
     quant_dir = project_root / "quant_data"
     paper_trading_dir = quant_dir / "paper_trading"
+    reference_dir = quant_dir / "reference"
     return Settings(
         project_root=project_root,
         host_project_root=host_project_root,
@@ -125,6 +130,10 @@ def get_settings() -> Settings:
         stock_list_path=quant_dir / "stock_list.parquet",
         stock_registry_path=quant_dir / "stock_registry.parquet",
         stock_list_subset_path=quant_dir / "stock_list_subset.parquet",
+        reference_dir=reference_dir,
+        reference_valuation_dir=reference_dir / "valuation_reference",
+        reference_status_path=reference_dir / "reference_status.json",
+        reference_batch_state_path=quant_dir / "batch_state" / "reference_data_state.json",
         models_dir=quant_dir / "models",
         backtests_dir=quant_dir / "backtests",
         paper_trading_dir=paper_trading_dir,

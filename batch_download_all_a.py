@@ -1,10 +1,33 @@
 #!/usr/bin/env python3
-"""Robust long-running batch downloader for full A-share history."""
+"""Robust long-running batch downloader for full A-share history.
+
+This module is the "Step 1" orchestration layer for the full-market data
+prepare job.
+
+The lower-level market-data helpers live in ``download_data.py``. This file
+adds the operational behavior that the one-shot downloader does not provide:
+
+- a resumable JSON state file
+- multi-pass retry logic for temporarily failing symbols
+- incremental refreshes when parquet outputs already exist
+- a hard timeout for a single symbol so one slow request does not block the
+  entire batch forever
+- progress logging that is friendly to the control panel and Docker logs
+
+In short:
+
+1. refresh the latest tradable A-share universe
+2. synchronize the canonical stock registry / active list
+3. decide which symbols still need work
+4. download and merge per-symbol kline + valuation data
+5. persist progress after every symbol so the batch can resume safely
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+import signal
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,11 +49,19 @@ from download_data import (
     load_existing_stock_list,
     normalize_exchange,
     sync_stock_registry,
+    write_reference_status,
     write_canonical_stock_lists,
 )
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse CLI arguments for the resilient full-market batch job.
+
+    These options mostly control operational behavior rather than feature
+    logic. For example, ``--sleep``, ``--max-passes``, and
+    ``--per-code-timeout-seconds`` let operators trade speed for stability
+    when external data providers are slow or rate-limited.
+    """
     parser = argparse.ArgumentParser(description="Long-running resilient batch downloader for all A-shares.")
     parser.add_argument("--data-dir", default=DEFAULT_DATA_DIR, help="Output data directory.")
     parser.add_argument("--start-date", required=True, help="Start date in YYYYMMDD format.")
@@ -40,6 +71,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-passes", type=int, default=5, help="Maximum retry passes over pending stocks.")
     parser.add_argument("--max-attempts", type=int, default=6, help="Maximum attempts per stock.")
     parser.add_argument("--relogin-every", type=int, default=300, help="Relogin Baostock every N stocks.")
+    parser.add_argument(
+        "--per-code-timeout-seconds",
+        type=float,
+        default=300.0,
+        help="Hard timeout per stock download attempt. Set to 0 to disable.",
+    )
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing parquet files.")
     parser.add_argument("--include-industry", action="store_true", help="Also enrich stock_list with industry data.")
     parser.add_argument("--universe", choices=("all",), default="all", help="Universe to download.")
@@ -52,10 +89,46 @@ def parse_args() -> argparse.Namespace:
 
 
 def utc_now_iso() -> str:
+    """Return a compact UTC timestamp for state-file bookkeeping."""
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+class CodeProcessingTimeoutError(TimeoutError):
+    """Raised when a single symbol exceeds the configured processing budget."""
+    pass
+
+
+def run_with_timeout(timeout_seconds: float, func: Any, *args: Any, **kwargs: Any) -> Any:
+    """Run ``func`` with a POSIX alarm-based hard timeout when available.
+
+    This guard exists because Step 1 is intentionally long-running. Without a
+    per-symbol timeout, a single hung network call could freeze the entire
+    batch for hours and make the state file look stale.
+    """
+    seconds = float(timeout_seconds or 0)
+    if seconds <= 0 or not hasattr(signal, "SIGALRM") or not hasattr(signal, "setitimer"):
+        return func(*args, **kwargs)
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+
+    def _handle_timeout(_signum: int, _frame: Any) -> None:
+        raise CodeProcessingTimeoutError(f"timeout after {seconds:g}s")
+
+    signal.signal(signal.SIGALRM, _handle_timeout)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        return func(*args, **kwargs)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+
 def _coerce_date(value: Any) -> pd.Timestamp | None:
+    """Normalize any date-like value to a date-only ``Timestamp``.
+
+    Returning ``None`` rather than ``NaT`` keeps the calling code simpler when
+    we compare parquet freshness or build incremental download ranges.
+    """
     ts = pd.to_datetime(value, errors="coerce")
     if pd.isna(ts):
         return None
@@ -63,6 +136,12 @@ def _coerce_date(value: Any) -> pd.Timestamp | None:
 
 
 def latest_parquet_date(path: Path) -> pd.Timestamp | None:
+    """Read the newest ``date`` value from a parquet file, if possible.
+
+    This is the core primitive used to decide whether a symbol is already
+    current enough to skip or whether we should request only the missing tail
+    of history.
+    """
     if not path.exists():
         return None
     try:
@@ -75,6 +154,12 @@ def latest_parquet_date(path: Path) -> pd.Timestamp | None:
 
 
 def merge_existing_output(path: Path, fresh_df: pd.DataFrame) -> pd.DataFrame:
+    """Merge a new incremental download into an existing parquet snapshot.
+
+    The batch may re-download only the newest few days for a symbol. To keep a
+    complete history file on disk, we combine the old and new rows, de-duplicate
+    by ``date``/``code``, then sort back into chronological order.
+    """
     if not path.exists():
         return fresh_df.reset_index(drop=True)
     try:
@@ -97,10 +182,12 @@ def merge_existing_output(path: Path, fresh_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def normalize_codes(codes: list[str]) -> list[str]:
+    """Standardize stock codes to six-character strings."""
     return [str(code).zfill(6) for code in codes]
 
 
 def build_exchange_by_code(stock_df: Any) -> dict[str, str | None]:
+    """Build a quick lookup from stock code to normalized exchange suffix."""
     return {
         str(row.code).zfill(6): normalize_exchange(row.exchange)
         for row in stock_df[["code", "exchange"]].itertuples(index=False)
@@ -108,6 +195,12 @@ def build_exchange_by_code(stock_df: Any) -> dict[str, str | None]:
 
 
 def load_state(state_path: Path, codes: list[str]) -> dict[str, Any]:
+    """Load and sanitize persisted batch state for the current universe.
+
+    The state file may come from a previous day or an earlier run with a
+    slightly different universe. This helper keeps only the codes that are
+    still relevant today and fills in defaults for anything missing.
+    """
     if state_path.exists():
         state = json.loads(state_path.read_text(encoding="utf-8"))
     else:
@@ -131,6 +224,7 @@ def load_state(state_path: Path, codes: list[str]) -> dict[str, Any]:
 
 
 def save_state(state_path: Path, state: dict[str, Any]) -> None:
+    """Persist the latest batch progress so resume is always possible."""
     state["updated_at"] = utc_now_iso()
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -145,6 +239,12 @@ def mark_existing_outputs(
     overwrite: bool,
     target_trade_date: str,
 ) -> None:
+    """Pre-mark symbols as done when both output files are already fresh.
+
+    This is the first important optimization in the batch. If both the kline
+    and valuation parquet files already cover the latest target trade date,
+    there is no reason to revisit that symbol in the current run.
+    """
     if overwrite:
         return
     target_trade_ts = _coerce_date(target_trade_date)
@@ -165,6 +265,7 @@ def mark_existing_outputs(
 
 
 def pending_codes(codes: list[str], state: dict[str, Any], max_attempts: int) -> list[str]:
+    """Return symbols that still need work and still have attempts left."""
     done_set = set(state["done_codes"])
     return [code for code in codes if code not in done_set and int(state["attempts"].get(code, 0)) < max_attempts]
 
@@ -176,6 +277,13 @@ def refresh_stock_list(
     include_industry: bool,
     sleep: float,
 ) -> tuple[Any, str]:
+    """Refresh the full-market universe and write canonical registry outputs.
+
+    Even though this batch focuses on raw data downloads, it also owns the
+    canonical stock universe. That keeps Step 1 self-contained: once the batch
+    finishes, downstream steps can trust ``stock_list.parquet`` and
+    ``stock_registry.parquet`` to reflect the latest market universe.
+    """
     universe_df, trade_date = get_selected_universe("all", end_date)
     existing_stock_df = load_existing_stock_list(data_dir)
     stock_df = build_stock_list(
@@ -212,15 +320,26 @@ def process_code(
     *,
     exchange: str | None,
     args: argparse.Namespace,
+    data_dir: Path,
     kline_dir: Path,
     valuation_dir: Path,
     target_trade_date: str,
 ) -> tuple[bool, str | None]:
+    """Download, merge, and write all Step 1 artifacts for one symbol.
+
+    Returns:
+        ``(True, None)`` when the symbol completed successfully.
+        ``(True, warning)`` when the symbol completed but with a non-fatal
+        warning, typically around valuation enrichment.
+        ``(False, reason)`` when the symbol should be retried in a later pass.
+    """
     kline_path = kline_dir / f"{code}.parquet"
     valuation_path = valuation_dir / f"{code}.parquet"
     target_trade_ts = _coerce_date(target_trade_date)
     download_start = args.start_date
     if not args.overwrite:
+        # If both existing files already reach the target trading date, we can
+        # skip this code entirely.
         kline_max = latest_parquet_date(kline_path)
         valuation_max = latest_parquet_date(valuation_path)
         if (
@@ -231,6 +350,8 @@ def process_code(
             and valuation_max >= target_trade_ts
         ):
             return True, None
+        # Otherwise, fall back to an incremental refresh. We use the oldest of
+        # the two newest dates so the slower dataset can catch up safely.
         existing_dates = [ts for ts in [kline_max, valuation_max] if ts is not None]
         if existing_dates:
             incremental_start = min(existing_dates).strftime("%Y%m%d")
@@ -253,8 +374,11 @@ def process_code(
             code,
             start_date=download_start,
             end_date=args.end_date,
+            data_dir=data_dir,
         )
         if not args.overwrite:
+            # Merge incremental tails back into the full on-disk history so
+            # downstream steps continue to see one complete parquet per symbol.
             kline_df = merge_existing_output(kline_path, kline_df)
             valuation_df = merge_existing_output(valuation_path, valuation_df)
         kline_df.to_parquet(kline_path, index=False)
@@ -267,6 +391,17 @@ def process_code(
 
 
 def run_batch(args: argparse.Namespace) -> int:
+    """Execute the resilient full-market download batch from start to finish.
+
+    This function owns the high-level control flow:
+
+    - initialize dependencies and directories
+    - refresh the universe
+    - load or reset resume state
+    - iterate over remaining symbols across multiple passes
+    - persist progress after every symbol
+    - return ``0`` only when the universe is fully completed
+    """
     load_dependencies()
     data_dir = Path(args.data_dir)
     state_path = Path(args.state_file)
@@ -281,6 +416,11 @@ def run_batch(args: argparse.Namespace) -> int:
             include_industry=args.include_industry,
             sleep=args.sleep,
         )
+        write_reference_status(
+            data_dir,
+            stock_df=stock_df,
+            target_trade_date=trade_date,
+        )
         codes = normalize_codes(stock_df["code"].tolist())
         exchange_by_code = build_exchange_by_code(stock_df)
         state = load_state(state_path, codes)
@@ -288,6 +428,9 @@ def run_batch(args: argparse.Namespace) -> int:
         previous_start_date = str(state.get("start_date") or "")
         previous_end_date = str(state.get("end_date") or "")
         if previous_start_date != args.start_date or previous_end_date != args.end_date:
+            # A new date range means the old progress can no longer be trusted
+            # as-is, so we reset the attempt bookkeeping and rebuild "done"
+            # from the actual parquet files below.
             state["pass_index"] = 0
             state["done_codes"] = []
             state["failed_codes"] = {}
@@ -305,6 +448,8 @@ def run_batch(args: argparse.Namespace) -> int:
             target_trade_date=trade_date,
         )
         if previous_end_date == args.end_date and len(state["done_codes"]) < previous_done_count:
+            # If the same end date now shows fewer completed files than the old
+            # state claimed, trust the filesystem over the stale JSON state.
             state["pass_index"] = 0
             state["failed_codes"] = {}
             state["attempts"] = {code: 0 for code in codes}
@@ -320,6 +465,8 @@ def run_batch(args: argparse.Namespace) -> int:
             todo = pending_codes(codes, state, args.max_attempts)
             print(f"开始第 {pass_index + 1}/{args.max_passes} 轮，待处理股票数: {len(todo)}")
             if not todo:
+                # No remaining work means either everything succeeded or all
+                # symbols were already current before this pass started.
                 break
 
             for idx, code in enumerate(todo, start=1):
@@ -331,20 +478,31 @@ def run_batch(args: argparse.Namespace) -> int:
                 )
 
                 if processed_since_login >= args.relogin_every:
+                    # Long Baostock sessions occasionally become unreliable, so
+                    # we proactively refresh the session after a fixed amount of
+                    # work instead of waiting for a hard failure.
                     print("达到重新登录阈值，重连 Baostock...")
                     baostock_logout()
                     time.sleep(2.0)
                     baostock_login()
                     processed_since_login = 0
 
-                ok, reason = process_code(
-                    code,
-                    exchange=exchange_by_code.get(code),
-                    args=args,
-                    kline_dir=kline_dir,
-                    valuation_dir=valuation_dir,
-                    target_trade_date=trade_date,
-                )
+                try:
+                    # Wrap one symbol in a hard timeout so a single slow API
+                    # response cannot stall the entire full-market job.
+                    ok, reason = run_with_timeout(
+                        args.per_code_timeout_seconds,
+                        process_code,
+                        code,
+                        exchange=exchange_by_code.get(code),
+                        args=args,
+                        data_dir=data_dir,
+                        kline_dir=kline_dir,
+                        valuation_dir=valuation_dir,
+                        target_trade_date=trade_date,
+                    )
+                except CodeProcessingTimeoutError as exc:
+                    ok, reason = False, str(exc)
                 processed_since_login += 1
 
                 if ok:
@@ -357,6 +515,8 @@ def run_batch(args: argparse.Namespace) -> int:
                     state["failed_codes"][code] = reason or "unknown"
                     print(f"{code} 失败: {reason}")
 
+                # Persist after every symbol so the control panel and any
+                # resumed run can continue from nearly the exact last point.
                 save_state(state_path, state)
                 time.sleep(args.sleep)
 
@@ -367,6 +527,8 @@ def run_batch(args: argparse.Namespace) -> int:
             )
             save_state(state_path, state)
             if remaining and pass_index < args.max_passes - 1:
+                # Give transient provider/network problems time to settle
+                # before attempting the remaining symbols again.
                 pause_seconds = max(args.pause_minutes, 0.0) * 60.0
                 print(f"暂停 {args.pause_minutes} 分钟后进入下一轮...")
                 time.sleep(pause_seconds)
@@ -381,6 +543,11 @@ def run_batch(args: argparse.Namespace) -> int:
             "last_code": state.get("last_code", ""),
         }
         print(json.dumps(summary, ensure_ascii=False, indent=2))
+        write_reference_status(
+            data_dir,
+            stock_df=stock_df,
+            target_trade_date=trade_date,
+        )
         save_state(state_path, state)
         return 0 if not remaining else 2
     finally:
@@ -388,6 +555,7 @@ def run_batch(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    """CLI entrypoint used by the container and local shell scripts."""
     args = parse_args()
     return run_batch(args)
 

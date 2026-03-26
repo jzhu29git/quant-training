@@ -4,6 +4,11 @@ import Link from "next/link";
 import { ReactNode } from "react";
 
 import { PanelLocale, getMessages } from "@/lib/i18n";
+import { ShanghaiTime } from "@/components/shanghai-time";
+
+function localeTag(locale: PanelLocale) {
+  return locale === "zh-Hant" ? "zh-Hant-HK" : "en-US";
+}
 
 export function Shell({
   title,
@@ -22,6 +27,16 @@ export function Shell({
 }) {
   const copy = getMessages(locale);
   const resolvedRoleLabel = role === "admin" ? copy.shell.admin : copy.shell.viewer;
+  const shanghaiTimeNow = new Intl.DateTimeFormat(localeTag(locale), {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Shanghai",
+    timeZoneName: "short"
+  }).format(new Date());
   const navItem = (href: Route, label: string) => ({ href, label });
   const navItems: Array<{ href: Route; label: string }> = [
     navItem("/overview", copy.shell.nav.overview),
@@ -41,7 +56,8 @@ export function Shell({
           <h1>{title}</h1>
           <p className="hero-subtitle">{subtitle}</p>
           <p className="hero-subtitle">
-            {copy.shell.signedInAs}: {username} · {copy.localeLabel} · {resolvedRoleLabel}
+            {copy.shell.signedInAs}: {username} · {copy.localeLabel} · {resolvedRoleLabel} ·{" "}
+            <ShanghaiTime locale={locale} label={copy.shell.shanghaiTime} initialValue={shanghaiTimeNow} />
           </p>
         </div>
         <nav className="nav">

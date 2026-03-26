@@ -10,7 +10,7 @@ from typing import Any
 from docker.errors import DockerException, ImageNotFound, NotFound
 
 from app.config import get_settings
-from app.services.batch import BatchControlError, _docker_client, _get_container_by_ref, start_batch, stop_batch
+from app.services.batch import BatchControlError, _docker_client, _get_container_by_ref, get_batch_status, start_batch, stop_batch
 from app.services.files import read_json, run_command, tail_file
 from app.services.model_profiles import resolve_model_profile
 
@@ -28,6 +28,16 @@ LEGACY_PIPELINE_STEP_KEY_MAP = {
     "step5": "step4",
     "step6": "step5",
 }
+
+
+def _append_control_log_line(path: Path | None, line: str) -> None:
+    if path is None:
+        return
+    try:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line)
+    except OSError:
+        return
 
 
 @dataclass(frozen=True)
@@ -158,6 +168,22 @@ def _now_iso() -> str:
 
 def _timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _parse_iso(ts: str | None) -> datetime | None:
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _latest_timestamp(*values: datetime | None) -> datetime | None:
+    candidates = [value for value in values if value is not None]
+    if not candidates:
+        return None
+    return max(candidates)
 
 
 def _pid_file(path_name: str) -> Path:
@@ -522,9 +548,7 @@ def stop_step(step_key: str) -> dict[str, Any]:
         _stop_logger_pid(logger_pid_file, container_prefixes=_step_container_prefixes(spec))
 
     latest_log_file = _latest_matching_log_file(get_settings().logs_dir, _step_log_patterns(spec))
-    if latest_log_file is not None:
-        with latest_log_file.open("a", encoding="utf-8") as handle:
-            handle.write(f"Stopped from control panel at {_now_iso()}\n")
+    _append_control_log_line(latest_log_file, f"Stopped from control panel at {_now_iso()}\n")
 
     return {
         "ok": True,
@@ -659,9 +683,7 @@ def stop_pipeline_run() -> dict[str, Any]:
         raise BatchControlError("stop_failed", f"Failed to stop full pipeline orchestration: {exc}", status_code=500) from exc
 
     latest_log_file = _latest_matching_log_file(get_settings().logs_dir, f"{FULL_PIPELINE_LOG_PREFIX}_*.log")
-    if latest_log_file is not None:
-        with latest_log_file.open("a", encoding="utf-8") as handle:
-            handle.write(f"Daily pipeline stopped from control panel at {_now_iso()}\n")
+    _append_control_log_line(latest_log_file, f"Daily pipeline stopped from control panel at {_now_iso()}\n")
 
     state["status"] = "stopped"
     state["updated_at"] = _now_iso()
@@ -689,11 +711,21 @@ def get_pipeline_run_status() -> dict[str, Any]:
     state = _full_pipeline_state()
     auto_run_state = read_json(settings.pipeline_auto_run_state_path)
     schema_version = state.get("step_key_schema_version")
+    current_step_key = _normalize_state_step_key(state.get("current_step_key"), schema_version=schema_version)
     container = _full_pipeline_container()
     container_info = _snapshot_container(container)
     latest_log_file = _latest_matching_log_file(settings.logs_dir, f"{FULL_PIPELINE_LOG_PREFIX}_*.log")
+    batch_status = get_batch_status() if container_info["is_running"] and current_step_key == "step1" else None
+    effective_updated_at = _latest_timestamp(
+        _parse_iso(state.get("updated_at")),
+        _parse_iso(batch_status.get("last_activity_at") if batch_status else None),
+        _parse_iso(batch_status.get("updated_at") if batch_status else None),
+    )
+    pipeline_stalled = bool(batch_status and batch_status.get("is_stalled"))
 
-    if container_info["is_running"]:
+    if pipeline_stalled:
+        status = "stalled"
+    elif container_info["is_running"]:
         status = "running"
     elif state.get("status") == "completed":
         status = "completed"
@@ -720,6 +752,7 @@ def get_pipeline_run_status() -> dict[str, Any]:
             "running": "Running",
             "completed": "Completed",
             "failed": "Failed",
+            "stalled": "Stalled",
             "stopped": "Stopped",
             "idle": "Idle",
         }.get(status, "Unknown"),
@@ -733,12 +766,15 @@ def get_pipeline_run_status() -> dict[str, Any]:
         "container_finished_at": container_info["finished_at"] or state.get("finished_at"),
         "container_exit_code": container_info["exit_code"],
         "oom_killed": container_info["oom_killed"],
-        "current_step_key": _normalize_state_step_key(state.get("current_step_key"), schema_version=schema_version),
+        "current_step_key": current_step_key,
         "current_step_label": state.get("current_step_label"),
         "completed_steps": _normalize_state_step_keys(state.get("completed_steps", []), schema_version=schema_version),
         "failed_step_key": _normalize_state_step_key(state.get("failed_step_key"), schema_version=schema_version),
-        "error_message": state.get("error_message"),
-        "updated_at": state.get("updated_at"),
+        "error_message": state.get("error_message") or (
+            f"Step 1 stalled since {batch_status.get('last_activity_at') or batch_status.get('updated_at') or 'unknown'}."
+            if pipeline_stalled else None
+        ),
+        "updated_at": effective_updated_at.isoformat() if effective_updated_at is not None else state.get("updated_at"),
         "log_file": str(latest_log_file) if latest_log_file else state.get("log_file"),
         "log_source": log_source,
         "log_lines": log_lines,

@@ -10,10 +10,20 @@ ENV_FILE="$ROOT_DIR/run/panel.env"
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
 if [[ -f "$ENV_FILE" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    trimmed="${line#"${line%%[![:space:]]*}"}"
+    if [[ -z "$trimmed" || "${trimmed:0:1}" == "#" ]]; then
+      continue
+    fi
+    if [[ "$trimmed" != *=* ]]; then
+      continue
+    fi
+    key="${trimmed%%=*}"
+    value="${trimmed#*=}"
+    if [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      export "$key=$value"
+    fi
+  done < "$ENV_FILE"
 fi
 
 GATEWAY_BASE_URL="${FUTU_GATEWAY_BASE_URL:-http://127.0.0.1:8080}"

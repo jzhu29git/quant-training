@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import re
 from typing import Any
 
 from docker.errors import DockerException, NotFound
@@ -14,6 +15,46 @@ from app.services.model import get_model_overview
 from app.services.paper import get_paper_trading_status
 
 STEP_LOG_TAIL = 24
+
+
+STEP1_LOG_TRANSLATIONS: tuple[tuple[str, str], ...] = (
+    (r"^请求失败，([0-9.]+) 秒后重试 \((\d+)/(\d+)\): (.+)$", r"Request failed, retrying in \1s (\2/\3): \4"),
+    (r"^Baostock 会话已失效，正在自动重新登录\.\.\.$", r"Baostock session expired, re-authenticating..."),
+    (r"^正在通过 Baostock 获取全市场 A 股名单，交易日: (.+)\.\.\.$", r"Fetching full A-share universe from Baostock, trade date: \1..."),
+    (r"^(.+) 返回空股票列表，回退到更早交易日继续尝试。$", r"\1 returned an empty stock list, falling back to an earlier trade date."),
+    (r"^(.+) 过滤后无有效 A 股列表，回退到更早交易日继续尝试。$", r"\1 returned no investable A-shares after filtering, falling back to an earlier trade date."),
+    (r"^正在通过 Baostock 获取沪深300成分股名单\.\.\.$", r"Fetching CSI 300 constituents from Baostock..."),
+    (r"^行业补全已启用：当前已知行业 (\d+)/(\d+)，待补 (\d+)。$", r"Industry enrichment enabled: \1/\2 industries already known, \3 to fill."),
+    (r"^\[stock_list (\d+)/(\d+)\] 正在通过 Baostock 补充行业信息: (\d+)$", r"[stock_list \1/\2] Filling industry metadata from Baostock: \3"),
+    (r"^补充 (\d+) 行业信息失败: (.+)$", r"Failed to fill industry metadata for \1: \2"),
+    (r"^行业补全完成：已知行业 (\d+)/(\d+)，仍缺失 (\d+)。$", r"Industry enrichment finished: \1/\2 industries known, \3 still missing."),
+    (r"^行业补全已跳过：当前已知行业 (\d+)/(\d+)，缺失 (\d+)。如需恢复 industry 特征，请启用 --include-industry。$", r"Industry enrichment skipped: \1/\2 industries known, \3 missing. Enable --include-industry to restore the industry feature."),
+    (r"^活跃股票池已保存至 (.+)，共 (\d+) 只股票。$", r"Active universe saved to \1, \2 stocks."),
+    (r"^主注册表已保存至 (.+)，共 (\d+) 只股票。$", r"Master registry saved to \1, \2 stocks."),
+    (r"^股票池同步结果: 新增 (\d+)，恢复 (\d+)，停用 (\d+)$", r"Universe sync result: added \1, reactivated \2, deactivated \3"),
+    (r"^全市场股票数: (\d+)$", r"Full-market stock count: \1"),
+    (r"^已完成: (\d+)$", r"Completed: \1"),
+    (r"^状态文件: (.+)$", r"State file: \1"),
+    (r"^开始第 (\d+)/(\d+) 轮，待处理股票数: (\d+)$", r"Starting pass \1/\2, pending stocks: \3"),
+    (r"^\[pass (\d+) (\d+)/(\d+)\] 下载 (\d+)，尝试次数 (\d+)/(\d+)$", r"[pass \1 \2/\3] Downloading \4, attempt \5/\6"),
+    (r"^达到重新登录阈值，重连 Baostock\.\.\.$", r"Reached re-login threshold, reconnecting to Baostock..."),
+    (r"^(\d{6}) 完成，提醒: (.+)$", r"\1 completed, note: \2"),
+    (r"^(\d{6}) 完成$", r"\1 completed"),
+    (r"^(\d{6}) 失败: (.+)$", r"\1 failed: \2"),
+    (r"^第 (\d+) 轮结束，累计完成 (\d+)/(\d+)，剩余待重试 (\d+)$", r"Pass \1 finished, completed \2/\3, remaining for retry: \4"),
+    (r"^暂停 ([0-9.]+) 分钟后进入下一轮\.\.\.$", r"Pausing \1 minutes before the next pass..."),
+)
+
+STEP2_LOG_TRANSLATIONS: tuple[tuple[str, str], ...] = (
+    (r"^stock_list\.parquet 缺少 exchange 列，请先重新运行 download_data\.py 刷新股票列表。$", r"stock_list.parquet is missing the exchange column. Re-run download_data.py to refresh the stock list."),
+    (r"^没有可用的 K 线/估值 parquet 可合并。$", r"No K-line / valuation parquet files are available to merge."),
+    (r"^已处理 (\d+)/(\d+) 只股票，当前累计 (\d+) 只进入训练集，(\d+) 行。$", r"Processed \1/\2 stocks, \3 included in training so far, \4 rows."),
+    (r"^没有生成任何可用训练样本。$", r"No usable training samples were generated."),
+    (r"^原始面板数据维度: \((.+)\)$", r"Raw panel shape: (\1)"),
+    (r"^特征工程完成，可训练数据维度: \((.+)\)$", r"Feature engineering completed, trainable shape: (\1)"),
+    (r"^输出文件: (.+)$", r"Output file: \1"),
+    (r"^特征元数据文件: (.+)$", r"Feature metadata file: \1"),
+)
 
 
 def _parse_iso(ts: str | None) -> datetime | None:
@@ -205,6 +246,23 @@ def _resolve_log_payload(
     return {"source": "none", "path": None, "updated_at": None, "lines": []}
 
 
+def _translate_log_line(line: str, translations: tuple[tuple[str, str], ...]) -> str:
+    text = line.rstrip("\n")
+    for pattern, replacement in translations:
+        translated = re.sub(pattern, replacement, text)
+        if translated != text:
+            return translated
+    return text
+
+
+def _display_log_lines(*, step: int, key: str, lines: list[str]) -> list[str]:
+    if step == 1 or key == "data_prepare":
+        return [_translate_log_line(line, STEP1_LOG_TRANSLATIONS) for line in lines]
+    if step == 2 or key == "feature_engineering":
+        return [_translate_log_line(line, STEP2_LOG_TRANSLATIONS) for line in lines]
+    return lines
+
+
 def _detail(label: str, value: Any) -> dict[str, str]:
     if value is None:
         return {"label": label, "value": "—"}
@@ -244,6 +302,7 @@ def _status_label(status: str) -> str:
         "running": "Running",
         "completed": "Completed",
         "failed": "Failed",
+        "stalled": "Stalled",
         "idle": "Idle",
     }.get(status, "Unknown")
 
@@ -261,6 +320,7 @@ def _build_runtime_step(
     command_markers: list[str] | None,
     artifact_path: Path | None,
     details: list[dict[str, str]],
+    warnings: list[str] | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
     pid_files = [settings.run_dir / pid_file_name for pid_file_name in (pid_file_names or [])]
@@ -300,7 +360,8 @@ def _build_runtime_step(
         "artifact_updated_at": artifact["updated_at"] if artifact else None,
         "artifact_size_bytes": artifact["size_bytes"] if artifact else None,
         "details": details,
-        "log_lines": log_payload["lines"],
+        "warnings": warnings or [],
+        "log_lines": _display_log_lines(step=step, key=key, lines=log_payload["lines"]),
     }
 
 
@@ -313,8 +374,37 @@ def _build_data_prepare_step_runtime(
     settings = get_settings()
     artifact_path = settings.stock_list_path
     artifact = _path_snapshot(artifact_path)
-    status = "running" if batch_status["is_running"] else "completed"
+    reference_snapshot = data_summary.get("reference_snapshot") or {}
+    industry_missing_count = int(reference_snapshot.get("industry_missing_count") or 0)
+    reference_missing_count = int(reference_snapshot.get("valuation_reference_missing_count") or 0)
+    reference_stale_count = int(reference_snapshot.get("valuation_reference_stale_count") or 0)
+    warnings: list[str] = []
+
+    if not reference_snapshot:
+        warnings.append(
+            "Slow reference status is missing. Run `bash run_reference_data_batch.sh` after the active stock list is available."
+        )
+    else:
+        if industry_missing_count > 0:
+            warnings.append(
+                f"Industry metadata is missing for {industry_missing_count} active stocks. Run `bash run_reference_data_batch.sh` to refresh slow metadata."
+            )
+        if reference_missing_count > 0 or reference_stale_count > 0:
+            warnings.append(
+                f"Reference valuation cache is missing for {reference_missing_count} stocks and stale for {reference_stale_count} stocks. Downstream feature rows can be dropped until the manual reference batch catches up."
+            )
+
     if data_summary["active_stock_count"] == 0 and data_summary["paired_file_count"] == 0:
+        status = "idle"
+    elif batch_status.get("is_stalled"):
+        status = "stalled"
+    elif batch_status["is_running"]:
+        status = "running"
+    elif batch_status.get("oom_killed") or batch_status.get("container_exit_code") not in (None, 0):
+        status = "failed"
+    elif artifact is not None:
+        status = "completed"
+    else:
         status = "idle"
 
     top_failure_summary = ", ".join(
@@ -336,9 +426,20 @@ def _build_data_prepare_step_runtime(
         _detail("Kline files", data_summary.get("kline_file_count")),
         _detail("Valuation files", data_summary.get("valuation_file_count")),
         _detail("Paired files", data_summary.get("paired_file_count")),
+        _detail("Reference status", reference_snapshot.get("path")),
+        _detail("Reference updated", reference_snapshot.get("updated_at")),
+        _detail("Reference ready", reference_snapshot.get("valuation_reference_ready_count")),
+        _detail("Reference missing", reference_missing_count),
+        _detail("Reference stale", reference_stale_count),
+        _detail("Industry missing", industry_missing_count),
+        _detail("Reference batch state", reference_snapshot.get("batch_state_path")),
+        _detail("Reference batch updated", reference_snapshot.get("batch_updated_at")),
+        _detail("Reference batch last code", reference_snapshot.get("batch_last_code")),
         _detail("Failure reasons", top_failure_summary),
         _detail("Batch state created", batch_status.get("created_at")),
         _detail("State updated", batch_status.get("updated_at")),
+        _detail("Last activity", batch_status.get("last_activity_at")),
+        _detail("Stalled", "yes" if batch_status.get("is_stalled") else "no"),
     ]
 
     return {
@@ -362,7 +463,8 @@ def _build_data_prepare_step_runtime(
         "artifact_updated_at": artifact["updated_at"] if artifact else None,
         "artifact_size_bytes": artifact["size_bytes"] if artifact else None,
         "details": details,
-        "log_lines": batch_logs.get("lines", []),
+        "warnings": warnings,
+        "log_lines": _display_log_lines(step=1, key="data_prepare", lines=batch_logs.get("lines", [])),
     }
 
 
@@ -422,6 +524,7 @@ def _build_panel_step_runtime() -> dict[str, Any]:
             _detail("Web started", web_info["started_at"]),
             _detail("API started", api_info["started_at"]),
         ],
+        "warnings": [],
         "log_lines": log_lines,
     }
 
@@ -467,6 +570,7 @@ def _build_paper_trading_step_runtime() -> dict[str, Any]:
             _detail("Target rows", targets.get("rows")),
             _detail("Target snapshot", targets.get("latest_signal_date")),
         ],
+        "warnings": [],
         "log_lines": daemon.get("log_lines", []),
     }
 

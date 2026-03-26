@@ -18,6 +18,7 @@ async function fetchJson<T>(path: string): Promise<T> {
 export type BatchStatus = {
   is_running: boolean;
   is_stale: boolean;
+  is_stalled?: boolean;
   container_name?: string | null;
   container_status?: string | null;
   container_running_for?: string | null;
@@ -27,6 +28,8 @@ export type BatchStatus = {
   oom_killed?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
+  last_activity_at?: string | null;
+  activity_age_seconds?: number | null;
   start_date?: string | null;
   end_date?: string | null;
   current_pass_index?: number | null;
@@ -79,6 +82,7 @@ export type WorkflowRuntimeStep = {
   artifact_updated_at?: string | null;
   artifact_size_bytes?: number | null;
   details: WorkflowRuntimeDetail[];
+  warnings?: string[];
   log_lines: string[];
 };
 
@@ -125,6 +129,24 @@ export type DataSummary = {
     rows: number;
     code_count?: number | null;
     latest_date: string | null;
+  } | null;
+  reference_snapshot?: {
+    path: string;
+    updated_at?: string | null;
+    target_trade_date?: string | null;
+    has_warnings: boolean;
+    industry_known_count: number;
+    industry_missing_count: number;
+    valuation_reference_ready_count: number;
+    valuation_reference_missing_count: number;
+    valuation_reference_stale_count: number;
+    missing_industry_codes: string[];
+    missing_reference_codes: string[];
+    stale_reference_codes: string[];
+    batch_state_path?: string | null;
+    batch_updated_at?: string | null;
+    batch_last_code?: string | null;
+    batch_failed_count?: number | null;
   } | null;
 };
 

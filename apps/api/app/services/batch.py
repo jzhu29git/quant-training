@@ -31,6 +31,25 @@ def _parse_iso(ts: str | None) -> datetime | None:
         return None
 
 
+def _latest_timestamp(*values: datetime | None) -> datetime | None:
+    candidates = [value for value in values if value is not None]
+    if not candidates:
+        return None
+    return max(candidates)
+
+
+def _append_control_log_line(path: Path | None, line: str) -> None:
+    if path is None:
+        return
+    try:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line)
+    except OSError:
+        # Runtime log files may be owned by a different UID when a container
+        # wrote them. Control actions should still succeed in that case.
+        return
+
+
 def _docker_client() -> DockerClient | None:
     try:
         return DockerClient.from_env()
@@ -243,9 +262,10 @@ def _default_batch_args() -> dict[str, str]:
         "max_passes": "5",
         "max_attempts": "6",
         "relogin_every": "300",
-        # Industry is a live model feature, so the canonical batch should keep
-        # stock metadata enriched instead of relying on a side workflow.
-        "include_industry": str(state.get("include_industry") or "1"),
+        "per_code_timeout_seconds": "300",
+        # Slow-moving metadata now lives in a separate manual reference batch,
+        # so the daily Step 1 control defaults to the faster path.
+        "include_industry": str(state.get("include_industry") or "0"),
     }
 
 
@@ -285,6 +305,8 @@ def start_batch() -> dict[str, Any]:
         defaults["max_attempts"],
         "--relogin-every",
         defaults["relogin_every"],
+        "--per-code-timeout-seconds",
+        defaults["per_code_timeout_seconds"],
     ]
     if defaults["include_industry"].strip().lower() not in {"0", "false", "no"}:
         command.append("--include-industry")
@@ -339,9 +361,10 @@ def stop_batch() -> dict[str, Any]:
         logger_pid_path.unlink()
 
     latest_log_file = _latest_log_file(settings.logs_dir)
-    if latest_log_file is not None:
-        with latest_log_file.open("a", encoding="utf-8") as handle:
-            handle.write(f"Batch stopped from control panel at {datetime.now(timezone.utc).isoformat()}\n")
+    _append_control_log_line(
+        latest_log_file,
+        f"Batch stopped from control panel at {datetime.now(timezone.utc).isoformat()}\n",
+    )
 
     return {
         "ok": True,
@@ -392,9 +415,21 @@ def get_batch_status() -> dict[str, Any]:
     remaining_count = max(total_codes - len(done_codes), 0) if total_codes else None
     progress_pct = round((len(done_codes) / total_codes) * 100, 2) if total_codes else None
 
+    now = datetime.now(timezone.utc)
     updated_at = _parse_iso(state.get("updated_at"))
+    latest_log_updated_dt = _parse_iso(latest_log_updated_at)
     stale_after = timedelta(minutes=20)
-    is_stale = updated_at is None or (datetime.now(timezone.utc) - updated_at) > stale_after
+    is_stale = updated_at is None or (now - updated_at) > stale_after
+    last_activity_at = _latest_timestamp(updated_at, latest_log_updated_dt)
+    activity_age = (now - last_activity_at) if last_activity_at is not None else None
+    container_known_stopped = bool(container_ref) and not container["is_running"] and container["status"] is not None
+    inferred_running_from_state = not container_known_stopped and not is_stale
+    is_running = bool(container["is_running"] or inferred_running_from_state)
+    is_stalled = bool(
+        container["is_running"]
+        and activity_age is not None
+        and activity_age > stale_after
+    )
 
     top_failures = [
         {"reason": reason, "count": count}
@@ -402,8 +437,9 @@ def get_batch_status() -> dict[str, Any]:
     ]
 
     return {
-        "is_running": container["is_running"] or not is_stale,
+        "is_running": is_running,
         "is_stale": is_stale,
+        "is_stalled": is_stalled,
         "container_id": container["container_id"],
         "container_name": container["container_name"],
         "container_status": container["status"],
@@ -415,6 +451,8 @@ def get_batch_status() -> dict[str, Any]:
         "state_file": str(settings.state_file),
         "created_at": state.get("created_at"),
         "updated_at": state.get("updated_at"),
+        "last_activity_at": last_activity_at.isoformat() if last_activity_at is not None else None,
+        "activity_age_seconds": round(activity_age.total_seconds(), 2) if activity_age is not None else None,
         "start_date": state.get("start_date"),
         "end_date": state.get("end_date"),
         "current_pass_index": state.get("pass_index"),
@@ -429,7 +467,7 @@ def get_batch_status() -> dict[str, Any]:
         "latest_log_file": str(latest_log_file) if latest_log_file else None,
         "latest_log_updated_at": latest_log_updated_at,
         "latest_log_line_count": latest_log_line_count,
-        "can_start": not container["is_running"],
+        "can_start": not is_running,
         "can_stop": bool(container["is_running"]),
     }
 

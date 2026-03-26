@@ -1,3 +1,4 @@
+import { AutoRefresh } from "@/components/auto-refresh";
 import { MetricCard, Panel } from "@/components/cards";
 import { DataTable } from "@/components/table";
 import { Shell } from "@/components/shell";
@@ -13,7 +14,7 @@ function runtimePillClass(status: string) {
   if (status === "running" || status === "completed") {
     return "live";
   }
-  if (status === "failed") {
+  if (status === "failed" || status === "stalled") {
     return "warn";
   }
   return "";
@@ -107,6 +108,7 @@ export default async function AdminPage() {
       username={user.username}
       role={user.role}
     >
+      <AutoRefresh intervalSeconds={15} />
       <section className="metrics-grid">
         <MetricCard label="Active Universe" value={formatNumber(data.active_stock_count, user.locale)} hint="stock_list.parquet" />
         <MetricCard label="Registry History" value={formatNumber(data.registry_stock_count, user.locale)} hint="stock_registry.parquet" />
@@ -203,6 +205,11 @@ export default async function AdminPage() {
                     <span key={`${step.step}-${detail.label}`}>{detail.label}: {formatDisplayValue(detail.value, { locale: user.locale, key: detail.label })}</span>
                   ))}
                 </div>
+                {(runtime?.warnings ?? []).map((warning) => (
+                  <p key={`${step.step}-warning-${warning}`} className="panel-copy status-warn">
+                    {warning}
+                  </p>
+                ))}
                 {runtime?.log_lines.length ? (
                   <pre className="log-console">{runtime.log_lines.join("\n")}</pre>
                 ) : (

@@ -35,6 +35,16 @@ def _latest_matching_log_file(logs_dir: Path, pattern: str) -> Path | None:
     return candidates[-1] if candidates else None
 
 
+def _append_control_log_line(path: Path | None, line: str) -> None:
+    if path is None:
+        return
+    try:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line)
+    except OSError:
+        return
+
+
 def _container_command(container: Any) -> str:
     config = container.attrs.get("Config", {})
     parts: list[str] = []
@@ -301,9 +311,7 @@ def stop_paper_trading_daemon() -> dict[str, Any]:
         raise BatchControlError("stop_failed", f"Failed to stop paper-trading daemon: {exc}", status_code=500) from exc
 
     latest_log_file = _latest_matching_log_file(get_settings().logs_dir, f"{PAPER_TRADING_LOG_PREFIX}_*.log")
-    if latest_log_file is not None:
-        with latest_log_file.open("a", encoding="utf-8") as handle:
-            handle.write(f"Stopped from control panel at {_now_iso()}\n")
+    _append_control_log_line(latest_log_file, f"Stopped from control panel at {_now_iso()}\n")
 
     return {
         "ok": True,
