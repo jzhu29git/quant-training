@@ -17,8 +17,14 @@ The public documentation set is organized around three audiences:
 - [SYSTEM_MANUAL.md](SYSTEM_MANUAL.md)
 - Best for reviewers who want a step-by-step explanation of the quant pipeline and artifact flow
 
+## Codex Handoff
+
+- [CODEX_HANDOFF_README_CN.md](CODEX_HANDOFF_README_CN.md)
+- Best for future Codex sessions or account switches that need the current project context, especially paper trading, mark-to-market, and catch-up replay
+
 Suggested reading order:
 
 1. `USER_GUIDE.md`
 2. `SYSTEM_DESIGN_SPEC.md`
 3. `SYSTEM_MANUAL.md`
+4. `CODEX_HANDOFF_README_CN.md`

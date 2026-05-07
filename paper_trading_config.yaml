@@ -1,0 +1,63 @@
+# Local A-share paper trading defaults.
+#
+# Keep this file as the source of truth for manual/Codex-assisted runs. The
+# current execution model is research-grade paper trading, not live brokerage
+# execution.
+
+default_font: Microsoft YaHei
+
+broker:
+  type: local_a_share_paper_gateway
+  gateway_base_url: http://127.0.0.1:18080
+  state_dir: quant_data/local_a_share_paper_gateway
+  initial_cash: 1000000
+  commission_bps: 3.0
+  min_commission: 5.0
+  stamp_tax_bps: 5.0
+  transfer_fee_bps: 0.1
+  lot_size: 100
+  t_plus_one: true
+  allow_short: false
+
+execution:
+  mode: latest_only
+  execution_price_mode: close_with_slippage
+  price_source: inference_scores_latest.parquet close
+  signal_timing: after_close
+  live_intraday_prices: false
+  buy_limit_bps: 50.0
+  sell_limit_bps: 50.0
+  cash_buffer_pct: 0.02
+  max_order_qty: 20000
+  rebalance_every_trade_days: 5
+  daily_mark_to_market: true
+  catch_up_rebalance: false
+  catch_up_mode: historical_oos_replay
+
+model:
+  retrain_every_trade_days: 20
+  full_research_review_every_trade_days: 60
+  default_min_score: 0.5
+
+indices:
+  csi500:
+    run_dir: quant_data/csi500_2y_run
+    group: momentum_liquidity
+    top_k: 10
+    state_dir: quant_data/paper_trading_local_csi500
+    budget_total: 1000000
+  csi2000:
+    run_dir: quant_data/csi2000_2y_run
+    group: momentum_liquidity
+    top_k: 10
+    state_dir: quant_data/paper_trading_local_csi2000
+    budget_total: 1000000
+  sse50:
+    run_dir: quant_data/sse50_2y_run
+    group: valuation_momentum
+    top_k: 10
+    state_dir: quant_data/paper_trading_local_sse50
+    budget_total: 1000000
+
+runbook:
+  path: docs/RUNBOOK_PAPER_TRADING_CN.md

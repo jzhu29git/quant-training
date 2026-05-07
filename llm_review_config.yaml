@@ -1,0 +1,38 @@
+# LLM provider config for TopK trader review.
+#
+# Do NOT put API keys in this file. Set keys via environment variables:
+#   $env:DEEPSEEK_API_KEY = "..."
+#   $env:BAIBAI_API_KEY = "..."
+#
+# If you need local overrides, create llm_review_config.local.yaml. It is
+# ignored by git.
+
+default_provider: deepseek
+
+providers:
+  deepseek:
+    name: DeepSeek
+    base_url: https://api.deepseek.com/v1
+    wire_api: chat_completions
+    model: deepseek-chat
+    api_key_env: DEEPSEEK_API_KEY
+    temperature: 0.2
+
+  baibai:
+    name: OpenAI-compatible
+    base_url: https://api.sharesai.xyz/v1
+    wire_api: responses
+    model: gpt-4.1-mini
+    api_key_env: BAIBAI_API_KEY
+    requires_openai_auth: true
+    temperature: 0.2
+
+review:
+  language: zh-CN
+  max_output_tokens: 900
+  timeout_seconds: 60
+  require_json: true
+  decision_values:
+    - 保留
+    - 谨慎
+    - 剔除

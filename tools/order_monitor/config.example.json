@@ -1,0 +1,43 @@
+{
+  "scan_interval_seconds": 5,
+  "price_threshold": 1000,
+  "currency_keywords": ["元", "rmb", "RMB", "¥", "￥", "usd", "USD", "$"],
+  "task_keywords": [
+    "data analysis",
+    "data analytics",
+    "quiz",
+    "assignment",
+    "homework",
+    "statistics",
+    "python",
+    "excel",
+    "spss",
+    "stata",
+    "machine learning",
+    "regression",
+    "数据分析"
+  ],
+  "exclude_keywords": ["不要", "已接", "结束", "满了"],
+  "prefer_english": true,
+  "english_ratio_hint": 0.35,
+  "dedupe_minutes": 60,
+  "source": "clipboard_drag",
+  "window_title_keywords": ["企业微信", "WeCom", "WeChat Work"],
+  "require_window_title_match": true,
+  "ocr": {
+    "language": "chi_sim+eng",
+    "tesseract_cmd": ""
+  },
+  "capture": {
+    "region": [780, 140, 1870, 880]
+  },
+  "clipboard_drag": {
+    "restore_clipboard": true,
+    "drag_direction": "bottom_to_top",
+    "margin": 20
+  },
+  "notifications": {
+    "feishu_webhook": "",
+    "log_file": "tools/order_monitor/order_hits.log"
+  }
+}
